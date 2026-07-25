@@ -1,0 +1,140 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
+    --radius: 0.625rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* ===== 桌面宠物窗口：全透明背景 ===== */
+html.pet-window,
+html.pet-window body,
+html.pet-window #root {
+  background: transparent !important;
+}
+
+/* ===== 海报同款贴纸语言 ===== */
+.grid-paper {
+  background-color: #fafaf6;
+  background-image:
+    linear-gradient(#e8e8e0 1px, transparent 1px),
+    linear-gradient(90deg, #e8e8e0 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+
+.sticker {
+  background: #fff;
+  border: 3px solid #191919;
+  border-radius: 14px;
+  box-shadow: 6px 6px 0 #191919;
+}
+
+.sticker-pressed {
+  box-shadow: 2px 2px 0 #191919;
+  transform: translate(4px, 4px);
+}
+
+.pixelated {
+  image-rendering: pixelated;
+}
+
+/* 宠物白色贴纸描边 + 黑色硬阴影（像素级 alpha 描边） */
+.pet-canvas {
+  filter:
+    drop-shadow(6px 0 0 #fff) drop-shadow(-6px 0 0 #fff)
+    drop-shadow(0 6px 0 #fff) drop-shadow(0 -6px 0 #fff)
+    drop-shadow(4px 4px 0 #fff) drop-shadow(-4px 4px 0 #fff)
+    drop-shadow(4px -4px 0 #fff) drop-shadow(-4px -4px 0 #fff)
+    drop-shadow(10px 12px 0 #191919);
+  transition: transform 0.15s ease;
+}
+.pet-canvas:hover {
+  transform: scale(1.03) rotate(-1deg);
+}
+.pet-canvas:active {
+  transform: scale(0.96);
+}
+
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.animate-float {
+  animation: float-y 2.6s ease-in-out infinite;
+}
+
+@keyframes marquee-x {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.animate-marquee {
+  animation: marquee-x 24s linear infinite;
+}
