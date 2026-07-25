@@ -1,7 +1,7 @@
 /**
  * 小绝 · 桌面宠物主进程
  *
- * QQ宠物式形态：
+ * 桌面宠物形态：
  *  - 透明无边框窗口，置顶悬浮，不占任务栏/Dock
  *  - 按住拖动，单击摸头，右键菜单（摸头/投喂/置顶/鼠标穿透/看板/退出）
  *  - 系统托盘常驻
@@ -326,7 +326,7 @@ function pollHitTest() {
 setInterval(pollHitTest, 60)
 
 app.whenReady().then(() => {
-  app.dock?.hide() // QQ宠物式：不占 Dock
+  app.dock?.hide() // 桌面宠物：不占 Dock
   startPetServer({
     port: PORT,
     distDir: path.join(__dirname, '..', 'dist'),

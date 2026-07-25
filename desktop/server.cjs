@@ -7,7 +7,7 @@
  *  - GET  /api/state     当前状态兜底轮询
  *  - GET  /*             调试看板静态文件（dist/），不依赖 Vite
  *
- * 额外行为：10 分钟没有任何事件 → 自动进入 sleeping（QQ宠物式摸鱼）。
+ * 额外行为：10 分钟没有任何事件 → 自动进入 sleeping（摸鱼）。
  */
 const http = require('http')
 const fs = require('fs')
@@ -71,7 +71,7 @@ function startPetServer({ port = 7100, distDir, onEvent } = {}) {
     onEvent?.(ev)
   }
 
-  // QQ宠物式：10 分钟没活干自动睡着
+  // 桌面宠物式：10 分钟没活干自动睡着
   const autoSleep = setInterval(() => {
     if (last.state !== 'sleeping' && Date.now() - last.ts > 10 * 60 * 1000) {
       pushEvent({

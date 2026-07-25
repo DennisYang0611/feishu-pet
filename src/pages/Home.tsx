@@ -293,19 +293,30 @@ export default function Home() {
         </aside>
       </main>
 
-      {/* ===== 桌面实拍 ===== */}
+      {/* ===== 真机实拍 ===== */}
       <section className="mx-auto max-w-6xl px-6 pb-6">
         <div className="sticker overflow-hidden p-4">
           <h2 className="mb-3 text-sm font-black text-[#191919]/60">
-            桌面实拍 · 透明窗口悬浮在桌面右下角，来消息冒泡、右键派活
+            真机实拍 · 透明窗口悬浮在桌面右下角，来消息冒泡、右键派活
           </h2>
-          <div className="flex justify-center">
-            <img
-              src="./screenshots/desktop-intro.png"
-              alt="小绝桌面实拍：自我介绍气泡 + 像素猫本体"
-              className="w-full max-w-2xl rounded-lg border-[3px] border-[#191919] object-cover shadow-[6px_6px_0_#191919]"
-              loading="lazy"
-            />
+          <div className="grid gap-4 md:grid-cols-3">
+            {[
+              { src: './screenshots/desktop-intro.png', cap: '桌面悬浮 · 自我介绍' },
+              { src: './screenshots/board-working.png', cap: '看板 · 干活中状态联动' },
+              { src: './screenshots/board-skins.png', cap: '看板 · 换装与大模型设置' },
+            ].map((s) => (
+              <figure key={s.src} className="m-0">
+                <img
+                  src={s.src}
+                  alt={s.cap}
+                  className="w-full rounded-lg border-[3px] border-[#191919] object-cover shadow-[4px_4px_0_#191919]"
+                  loading="lazy"
+                />
+                <figcaption className="mt-1.5 text-center text-[11px] font-black text-[#191919]/50">
+                  {s.cap}
+                </figcaption>
+              </figure>
+            ))}
           </div>
         </div>
       </section>
