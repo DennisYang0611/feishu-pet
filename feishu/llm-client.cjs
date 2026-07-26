@@ -70,7 +70,8 @@ function maskKey(k) {
   return k.length > 10 ? `${k.slice(0, 5)}…${k.slice(-4)}` : '****'
 }
 
-/** 调本机 CLI（codex / claude），prompt 走 argv 避免 shell 转义问题 */
+/** 调本机 CLI（codex / claude），prompt 走 argv 避免 shell 转义问题。
+ *  cwd 锁到临时目录：总结场景不需要项目上下文，防止 agent 在工作目录里开工具循环。 */
 function runCli(cmd, args, timeoutMs) {
   return new Promise((resolve, reject) => {
     // Finder 启动的进程 PATH 很短，补上常见 CLI 安装目录
@@ -78,7 +79,7 @@ function runCli(cmd, args, timeoutMs) {
       ...process.env,
       PATH: `${os.homedir()}/.local/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}`,
     }
-    const p = spawn(cmd, args, { env })
+    const p = spawn(cmd, args, { env, cwd: os.tmpdir(), stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
     let err = ''
     const timer = setTimeout(() => {
@@ -100,18 +101,30 @@ function runCli(cmd, args, timeoutMs) {
   })
 }
 
-/** 通用 LLM 调用（带一次重试），返回纯文本 */
+/** 通用 LLM 调用（带一次重试），返回纯文本。CLI 模式本地模型冷启动慢，默认给 300s */
 async function llmChat(prompt, { timeoutMs = 90_000 } = {}) {
   const cfg = loadLlmConfig()
+  const cliTimeout = Math.max(timeoutMs, 300_000)
   let lastErr
   for (const attempt of [1, 2]) {
     try {
       if (cfg.provider === 'codex') {
         const outFile = path.join(os.tmpdir(), `xiaojue-llm-${Date.now()}.txt`)
+        // 关键：-C 锁到临时目录 + 只读沙盒，否则 codex 会在当前工作目录开 agent 工具循环
         await runCli(
           'codex',
-          ['exec', '--skip-git-repo-check', '--output-last-message', outFile, prompt],
-          timeoutMs,
+          [
+            'exec',
+            '--skip-git-repo-check',
+            '--sandbox',
+            'read-only',
+            '-C',
+            os.tmpdir(),
+            '--output-last-message',
+            outFile,
+            prompt,
+          ],
+          cliTimeout,
         )
         const text = fs.readFileSync(outFile, 'utf8').trim()
         fs.unlink(outFile, () => {})
@@ -119,7 +132,7 @@ async function llmChat(prompt, { timeoutMs = 90_000 } = {}) {
         throw new Error('codex 无输出')
       }
       if (cfg.provider === 'claude') {
-        const text = await runCli('claude', ['-p', prompt], timeoutMs)
+        const text = await runCli('claude', ['-p', prompt], cliTimeout)
         if (text) return text
         throw new Error('claude 无输出')
       }

@@ -443,7 +443,7 @@ async function handleCommand(cmd) {
     if (cmd.command === 'todo') {
       const todayStart = new Date()
       todayStart.setHours(0, 0, 0, 0)
-      const hours = Math.max(1, (Date.now() - todayStart.getTime()) / 3600_000)
+      const hours = Math.round(Math.max(1, (Date.now() - todayStart.getTime()) / 3600_000) * 10) / 10
       await runSummaryJob(hours, 'todo', cmd.label)
     } else if (cmd.command?.startsWith('summary:')) {
       const h = [6, 12, 24].includes(Number(cmd.command.split(':')[1]))
