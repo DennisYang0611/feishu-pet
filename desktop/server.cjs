@@ -332,7 +332,6 @@ function startPetServer({ port = 7100, distDir, onEvent } = {}) {
           provider: cfg.provider,
           baseUrl: cfg.baseUrl,
           model: cfg.model,
-          ailyAppId: cfg.ailyAppId || '',
           hasKey: Boolean(cfg.apiKey),
           apiKeyMasked: maskKey(cfg.apiKey),
         },
@@ -353,7 +352,6 @@ function startPetServer({ port = 7100, distDir, onEvent } = {}) {
             baseUrl: String(parsed.baseUrl ?? '').trim(),
             model: String(parsed.model ?? '').trim(),
             apiKey: String(parsed.apiKey ?? '').trim(),
-            ailyAppId: String(parsed.ailyAppId ?? '').trim(),
           })
           json(res, {
             ok: true,
@@ -361,7 +359,6 @@ function startPetServer({ port = 7100, distDir, onEvent } = {}) {
               provider: next.provider,
               baseUrl: next.baseUrl,
               model: next.model,
-              ailyAppId: next.ailyAppId || '',
               hasKey: Boolean(next.apiKey),
               apiKeyMasked: maskKey(next.apiKey),
             },

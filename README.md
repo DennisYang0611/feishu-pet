@@ -12,7 +12,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-macOS-111827.svg?logo=apple&logoColor=white)
 ![Stack](https://img.shields.io/badge/stack-Electron%20%2B%20React%20%2B%20lark--cli-2B5CFF.svg)
-![LLM](https://img.shields.io/badge/LLM-API%20%7C%20Codex%20%7C%20Claude%20Code%20%7C%20Aily-8B5CF6.svg)
+![LLM](https://img.shields.io/badge/LLM-API%20%7C%20Codex%20%7C%20Claude%20Code-8B5CF6.svg)
 ![License](https://img.shields.io/badge/license-MIT-059669.svg)
 
 </div>
@@ -39,7 +39,7 @@
 1. **六档状态实时联动**——待机 / 理解中 / 干活中 / 搞定 / 出错了 / 摸鱼中。你的 bot 在关键节点 POST 一个事件（一行 curl），小绝立刻换动作换台词。协议极简，任何语言任何框架都能接。
 2. **飞书消息气泡提醒**——监工（`feishu/group-watcher.mjs`）轮询你指定的群 + 最近活跃的私聊，新消息变成宠物头顶的气泡；@你、@所有人、刷屏、发图发文件，各有专属反应。**气泡带 ↗ 角标，点一下直接 applink 唤起飞书跳到对应会话。**
 3. **小绝的绝活**——右键菜单派活：「整理今日待办」「过去 6 / 12 / 24 小时消息总结」。lark-cli 按时间窗捞消息 → LLM 生成待办清单或摘要 → 看板展示 + 私聊发你。每天 18:00 还有一份自动日报。
-4. **大模型自己选**——看板里可视化切换 LLM 后端：自定义 OpenAI 兼容 API（baseUrl + key + model）、本机 Codex CLI、本机 Claude Code CLI、**飞书 Aily 智能伙伴**（填 Aily 应用 ID，绝活指令直接交给 Aily 原生执行）。配置即存即用，不用重启。没有 key 的新用户直接选 CLI 模式，用自己已登录的账号就能跑。
+4. **大模型自己选**——看板里可视化切换 LLM 后端：自定义 OpenAI 兼容 API（baseUrl + key + model）、本机 Codex CLI、本机 Claude Code CLI。配置即存即用，不用重启。没有 key 的新用户直接选 CLI 模式，用自己已登录的账号就能跑。
 5. **消息归档看板**——宠物身上都是碎片化的气泡，想看全的时候打开 `http://localhost:7100/archive`（看板「事件日志」右上角和宠物右键菜单都有入口）：消息提醒 / 绝活汇报全文 / 干活指令，按天分组持久化归档，支持筛选和搜索，每条消息带「去飞书看 ↗」直达会话。
 6. **换装与形态**——5 套卡通贴纸皮肤（像素猫 / Q 版财神 / 小绿芽 / 彩虹独角兽 / 飞书配色小飞机）× 幼年 / 成年两种形态，右键即换，重启保持。
 7. **一只懂规矩的宠物**——按住拖动、单击摸头冒爱心、右键菜单、投喂食物、10 分钟没活干自动摸鱼、鼠标穿透挂着不碍事（⌘⌥P 随时恢复）、**像素级点击穿透**（点在透明区域直达桌面，只有点在它身上才响应）。

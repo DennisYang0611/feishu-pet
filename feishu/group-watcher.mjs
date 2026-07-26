@@ -414,43 +414,25 @@ async function sendFeishuUser(md) {
 
 async function runSummaryJob(hours, mode, label) {
   const modeName = mode === 'todo' ? '整理今日待办' : `总结过去 ${hours} 小时`
-  const usingAily = loadLlmConfig().provider === 'aily'
-  await post('/api/event', {
-    state: 'working',
-    label: usingAily ? `${modeName} · 已呼叫 Aily…` : `${modeName} · 正在捞消息…`,
-    source: 'watcher',
-  })
+  await post('/api/event', { state: 'working', label: `${modeName} · 正在捞消息…`, source: 'watcher' })
+  const lines = await collectLines(hours)
   let full
-  if (usingAily) {
-    // Aily 引擎：它原生能读飞书消息，不用本地捞，直接下自然语言指令
-    const query =
-      mode === 'todo'
-        ? '帮我整理今天需要处理和回复的待办事项，按优先级列出来，说清谁在什么事上需要我做什么。'
-        : `帮我总结过去 ${hours} 小时的飞书消息动态，按会话或主题分要点，有需要我留意的事单独指出。`
-    try {
-      full = await llmChat(query)
-    } catch (err) {
-      full = `Aily 这次没接住活：${String(err.message).slice(0, 120)}`
-    }
+  if (!lines.length) {
+    full = `过去 ${hours} 小时飞书静悄悄的，没有新消息，好好享受清净 😺`
   } else {
-    const lines = await collectLines(hours)
-    if (!lines.length) {
-      full = `过去 ${hours} 小时飞书静悄悄的，没有新消息，好好享受清净 😺`
-    } else {
-      const prompt =
-        mode === 'todo'
-          ? '你是桌面宠物「小绝」，主人是黑哥。下面是黑哥今天飞书各群和私聊的消息记录（格式：时间 [会话] 发言人: 内容）。\n' +
-            '请帮黑哥整理一份「今日待办」：\n1. 从消息里挑出需要黑哥回复、处理、确认或跟进的事，按紧急程度列 3-8 条，每条一行，开头用 🔴🟡⚪ 标优先级\n' +
-            '2. 每条说清谁在哪有什么事、需要黑哥做什么\n3. 没有明确待办就直说「今天没有必须跟进的硬待办」，再附 2-3 条值得关注的动态\n' +
-            '4. 不超过 250 字，口语化，简体中文\n\n消息记录：\n' + lines.join('\n')
-          : '你是桌面宠物「小绝」，主人是黑哥。下面是黑哥飞书过去 ' + hours + ' 小时各群和私聊的消息记录（格式：时间 [会话] 发言人: 内容）。\n' +
-            '请做一份消息总结：\n1. 第一行一句话概括整体动态\n2. 按会话/主题分 3-6 条要点，每条一行，说清谁在聊什么、有什么结论或进展\n' +
-            '3. 有需要黑哥留意的事单独一行「⚠️ 记得看：」指出；没有就不写\n4. 不超过 250 字，口语化，可带一两个 emoji，简体中文\n\n消息记录：\n' + lines.join('\n')
-      try {
-        full = await llmChat(prompt)
-      } catch {
-        full = `总结引擎打盹了。过去 ${hours} 小时共捞到 ${lines.length} 条消息，稍后再让我试一次。`
-      }
+    const prompt =
+      mode === 'todo'
+        ? '你是桌面宠物「小绝」，主人是黑哥。下面是黑哥今天飞书各群和私聊的消息记录（格式：时间 [会话] 发言人: 内容）。\n' +
+          '请帮黑哥整理一份「今日待办」：\n1. 从消息里挑出需要黑哥回复、处理、确认或跟进的事，按紧急程度列 3-8 条，每条一行，开头用 🔴🟡⚪ 标优先级\n' +
+          '2. 每条说清谁在哪有什么事、需要黑哥做什么\n3. 没有明确待办就直说「今天没有必须跟进的硬待办」，再附 2-3 条值得关注的动态\n' +
+          '4. 不超过 250 字，口语化，简体中文\n\n消息记录：\n' + lines.join('\n')
+        : '你是桌面宠物「小绝」，主人是黑哥。下面是黑哥飞书过去 ' + hours + ' 小时各群和私聊的消息记录（格式：时间 [会话] 发言人: 内容）。\n' +
+          '请做一份消息总结：\n1. 第一行一句话概括整体动态\n2. 按会话/主题分 3-6 条要点，每条一行，说清谁在聊什么、有什么结论或进展\n' +
+          '3. 有需要黑哥留意的事单独一行「⚠️ 记得看：」指出；没有就不写\n4. 不超过 250 字，口语化，可带一两个 emoji，简体中文\n\n消息记录：\n' + lines.join('\n')
+    try {
+      full = await llmChat(prompt)
+    } catch {
+      full = `总结引擎打盹了。过去 ${hours} 小时共捞到 ${lines.length} 条消息，稍后再让我试一次。`
     }
   }
   const md = `**🐾 小绝 · ${label || modeName}**\n\n${full}`
@@ -531,7 +513,7 @@ async function listenCommands() {
 
 async function main() {
   const { provider, model } = loadLlmConfig()
-  const llmDesc = provider === 'api' ? model : provider === 'aily' ? '飞书 Aily' : `${provider} CLI`
+  const llmDesc = provider === 'api' ? model : `${provider} CLI`
   console.log(`🐾 小绝群监工启动 → ${PET_URL}（轮询 ${POLL_SEC}s，日报 ${DAILY_HOUR}:00，LLM ${llmDesc}${DRYRUN ? '，DRYRUN 不发飞书' : ''}${INBOX ? `，收件箱扫描 ${INBOX_CHATS} 个会话` : ''}，绝活指令监听中）`)
   listenCommands()
   let first = true
