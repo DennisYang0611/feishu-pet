@@ -104,16 +104,46 @@ function PetWindow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 气泡：有事件后 30 秒内可见；小体型时同步缩小避免超出窗口
+  // 未读消息：带 chatId 的消息提醒会挂着不消失，直到点气泡跳过去看
+  const [unread, setUnread] = useState<{ n: number; chatId?: string; label: string }>({
+    n: 0,
+    label: '',
+  })
+  const seenMsgTs = useRef(0)
+  useEffect(() => {
+    const ev = current
+    if (!ev.chatId) return
+    if (['system', 'auto', 'demo', 'local', 'menu'].includes(ev.source ?? '')) return
+    if (ev.ts <= seenMsgTs.current) return
+    seenMsgTs.current = ev.ts
+    // 重启补投的旧消息（5 分钟前）不计未读，免得一开机就挂着气泡
+    if (Date.now() - ev.ts > 5 * 60_000) return
+    setUnread((u) => ({ n: u.n + 1, chatId: ev.chatId, label: ev.label ?? '' }))
+  }, [current])
+
+  const clearUnread = useRef(() => {})
+  clearUnread.current = () => setUnread({ n: 0, label: '' })
+
+  // 气泡：未读消息常驻直到点掉；普通状态事件 30 秒内可见；小体型时同步缩小避免超出窗口
   const introActive = now < introUntil
-  const bubbleVisible = introActive || (Boolean(current.label) && now - current.ts < 30000)
+  const hasUnread = unread.n > 0
+  const bubbleVisible =
+    introActive || hasUnread || (Boolean(current.label) && now - current.ts < 30000)
   const bubbleScale = Math.min(1, Math.max(0.75, scale / 0.8))
-  const bubbleBadge = introActive ? '自我介绍' : meta.name
-  const bubbleBadgeBg = introActive ? '#FF9EC6' : meta.color
-  const bubbleBadgeColor = introActive ? '#191919' : meta.textColor
-  const bubbleText = introActive ? INTRO_TEXT : current.label
+  const bubbleBadge = introActive ? '自我介绍' : hasUnread ? `新消息 x${unread.n}` : meta.name
+  const bubbleBadgeBg = introActive ? '#FF9EC6' : hasUnread ? '#FF4D4F' : meta.color
+  const bubbleBadgeColor = introActive || hasUnread ? '#191919' : meta.textColor
+  const bubbleText = introActive ? INTRO_TEXT : hasUnread ? unread.label : current.label
   // 消息类气泡可点击跳转飞书会话（自我介绍不可点）
-  const bubbleClickable = !introActive && Boolean(current.chatId)
+  const bubbleClickable = !introActive && (hasUnread || Boolean(current.chatId))
+  const bubbleChatId = hasUnread ? unread.chatId : current.chatId
+
+  const onBubbleClick = () => {
+    if (!bubbleClickable) return
+    const chatId = bubbleChatId
+    clearUnread.current()
+    if (chatId) window.petAPI?.openChat(chatId)
+  }
 
   const onMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return
@@ -154,7 +184,7 @@ function PetWindow() {
       >
         <div
           id={bubbleClickable ? 'pet-bubble-click' : undefined}
-          onClick={bubbleClickable ? () => window.petAPI?.openChat(current.chatId!) : undefined}
+          onClick={onBubbleClick}
           title={bubbleClickable ? '点击跳转到飞书会话' : undefined}
           className={`relative rounded-2xl border-[3px] border-[#191919] bg-white px-3 py-2 shadow-[4px_4px_0_#191919] ${
             bubbleClickable ? 'pointer-events-auto cursor-pointer hover:bg-[#F0F5FF]' : ''

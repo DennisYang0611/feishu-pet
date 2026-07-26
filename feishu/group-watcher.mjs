@@ -304,6 +304,8 @@ async function scanInbox() {
     .filter((c) => c.chat_id !== CHAT_ID) // 组委会群由详细轮询负责
     .slice(0, INBOX_CHATS)
 
+  const pending = [] // 一轮里的新消息先收集，群消息先播、私聊压轴（最后一条才会挂在气泡上）
+
   for (const chat of chats) {
     try {
       const { stdout: out } = await run(
@@ -327,12 +329,19 @@ async function scanInbox() {
       if (senderId === MY_OPEN_ID) continue
       if (isBot && chat.chat_mode !== 'p2p') continue
       const c = classify(m)
-      const where = chat.chat_mode === 'p2p' ? '私聊' : `「${chat.name}」`
-      await pushGroupEvent('thinking', `📩 ${where} ${c.name}: ${c.text}`, chat.chat_id)
-      console.log(`[inbox] ${where} ${c.name}: ${c.text}`)
+      const isP2p = chat.chat_mode === 'p2p'
+      const where = isP2p ? '私聊' : `「${chat.name}」`
+      pending.push({ isP2p, label: `📩 ${where} ${c.name}: ${c.text}`, chatId: chat.chat_id })
     } catch (err) {
       console.warn(`[inbox] 会话 ${chat.name || chat.chat_id} 失败: ${err.message}`)
     }
+  }
+  // 私聊（含 bot 私聊）排最后播：最后一条事件才会留在气泡上，保证最重要的被看见
+  pending.sort((a, b) => Number(a.isP2p) - Number(b.isP2p))
+  for (const p of pending) {
+    await pushGroupEvent('thinking', p.label, p.chatId)
+    console.log(`[inbox] ${p.label}`)
+    if (pending.length > 1) await new Promise((r) => setTimeout(r, 800))
   }
   inboxFirst = false
 }
