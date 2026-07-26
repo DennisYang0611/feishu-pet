@@ -12,7 +12,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-macOS-111827.svg?logo=apple&logoColor=white)
 ![Stack](https://img.shields.io/badge/stack-Electron%20%2B%20React%20%2B%20lark--cli-2B5CFF.svg)
-![LLM](https://img.shields.io/badge/LLM-API%20%7C%20Codex%20%7C%20Claude%20Code-8B5CF6.svg)
+![LLM](https://img.shields.io/badge/LLM-API%20%7C%20Codex%20%7C%20Claude%20Code%20%7C%20Aily-8B5CF6.svg)
 ![License](https://img.shields.io/badge/license-MIT-059669.svg)
 
 </div>
@@ -92,6 +92,7 @@ curl -X POST http://localhost:7100/api/event \
 
 - [ ] electron-builder 打包成 .app / .dmg（免 Node 环境分发）
 - [x] 多皮肤与换装（5 皮肤 × 幼年/成年双形态）
+- [x] 消息归档看板（/archive · 消息/汇报/指令按天分组持久化）
 - [ ] 桌面上随机游走 / 卖萌待机动作
 - [ ] 互动回执：被摸后 bot 在飞书群里回一句撒娇文案
 - [ ] Windows / Linux 适配
