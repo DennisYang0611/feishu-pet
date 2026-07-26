@@ -51,6 +51,7 @@ function startPetServer({ port = 7100, distDir, onEvent } = {}) {
   }
   const log = [last]
   let lastReport = null
+  let lastCommand = null // 最近一条绝活指令，SSE 重连时随 init 补投，防启动竞态丢指令
 
   const broadcast = (payload) => {
     const data = `data: ${JSON.stringify(payload)}\n\n`
@@ -108,7 +109,7 @@ function startPetServer({ port = 7100, distDir, onEvent } = {}) {
         'Access-Control-Allow-Origin': '*',
       })
       res.write(
-        `data: ${JSON.stringify({ type: 'init', last, log: log.slice(-30), lastReport })}\n\n`,
+        `data: ${JSON.stringify({ type: 'init', last, log: log.slice(-30), lastReport, lastCommand })}\n\n`,
       )
       clients.add(res)
       req.on('close', () => clients.delete(res))
@@ -226,6 +227,7 @@ function startPetServer({ port = 7100, distDir, onEvent } = {}) {
             ts: Date.now(),
             source: String(parsed.source ?? 'api').slice(0, 30),
           }
+          lastCommand = cmd
           broadcast({ type: 'command', command: cmd })
           json(res, { ok: true, command: cmd })
         } catch {

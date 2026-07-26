@@ -56,6 +56,7 @@ function setSkin(patch) {
   if (patch.skin) currentSkin = patch.skin
   if (patch.form) currentForm = patch.form
   win?.webContents.send('set-skin', { skin: currentSkin, form: currentForm })
+  refreshTray()
 }
 
 /** 小绝的绝活：让 watcher 去飞书捞消息干活 */
@@ -73,6 +74,7 @@ function setSize(name) {
   if (!win || !s) return
   win.setSize(s.w, s.h)
   win.webContents.send('set-scale', s.scale)
+  refreshTray()
 }
 
 function sendInteract(kind) {
@@ -82,7 +84,9 @@ function sendInteract(kind) {
 /** 鼠标穿透开关（菜单和全局快捷键共用） */
 function setClickThrough(flag) {
   clickThrough = flag
+  hitIgnoring = flag // 与像素级穿透的开关状态对齐，避免重复调用
   win?.setIgnoreMouseEvents(clickThrough, { forward: true })
+  refreshTray()
   // 气泡提示一句，免得用户以为猫死了
   fetch(`http://localhost:${PORT}/api/event`, {
     method: 'POST',
@@ -93,6 +97,11 @@ function setClickThrough(flag) {
       source: 'system',
     }),
   }).catch(() => {})
+}
+
+/** 托盘菜单只构建一次会过期，状态变化后重建让勾选保持同步 */
+function refreshTray() {
+  if (tray) tray.setContextMenu(buildMenu())
 }
 
 function buildMenu() {
@@ -163,6 +172,7 @@ function buildMenu() {
       click: (item) => {
         alwaysOnTop = item.checked
         win?.setAlwaysOnTop(alwaysOnTop, 'screen-saver')
+        refreshTray()
       },
     },
     {
@@ -202,9 +212,12 @@ function createWindow() {
   win.setAlwaysOnTop(true, 'screen-saver')
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   win.setMenu(null)
-  // 初始位置：屏幕右下角
+  // 初始位置：上次拖动的位置；没有则屏幕右下角
   const { workAreaSize } = screen.getPrimaryDisplay()
-  win.setPosition(workAreaSize.width - s.w - 40, workAreaSize.height - s.h - 40)
+  const pos = loadPosition()
+  const px = pos ? pos.x : workAreaSize.width - s.w - 40
+  const py = pos ? pos.y : workAreaSize.height - s.h - 40
+  win.setPosition(px, py)
   win.loadFile(path.join(__dirname, '..', 'dist', 'pet.html'))
   // 加载完成后同步当前体型（否则渲染端用默认缩放）
   win.webContents.on('did-finish-load', () => {
@@ -249,20 +262,45 @@ function createTray() {
   })
 }
 
+// —— 窗口位置持久化：拖过的位置重启后还在 ——
+const POS_FILE = path.join(app.getPath('userData'), 'pet-position.json')
+function loadPosition() {
+  try {
+    const p = JSON.parse(require('fs').readFileSync(POS_FILE, 'utf8'))
+    if (Number.isFinite(p.x) && Number.isFinite(p.y)) return p
+  } catch { /* 首次启动没有 */ }
+  return null
+}
+function savePosition() {
+  if (!win) return
+  try {
+    const [x, y] = win.getPosition()
+    require('fs').writeFileSync(POS_FILE, JSON.stringify({ x, y }))
+  } catch { /* 写不进就算了 */ }
+}
+
 // —— 拖拽（renderer 报告开始/移动，主进程算位置） ——
+let dragSince = 0
 ipcMain.on('drag-start', () => {
   if (!win) return
   const cursor = screen.getCursorScreenPoint()
   const [wx, wy] = win.getPosition()
   dragOffset = { x: cursor.x - wx, y: cursor.y - wy }
+  dragSince = Date.now()
 })
 ipcMain.on('drag-move', () => {
   if (!win || !dragOffset) return
   const cursor = screen.getCursorScreenPoint()
-  win.setPosition(cursor.x - dragOffset.x, cursor.y - dragOffset.y)
+  // 钳制在屏幕内（至少留 60×40 可见），防止拖出屏幕找不回
+  const wa = screen.getDisplayNearestPoint(cursor).workArea
+  const [ww, wh] = win.getSize()
+  const nx = Math.min(Math.max(cursor.x - dragOffset.x, wa.x - ww + 60), wa.x + wa.width - 60)
+  const ny = Math.min(Math.max(cursor.y - dragOffset.y, wa.y), wa.y + wa.height - 40)
+  win.setPosition(nx, ny)
 })
 ipcMain.on('drag-end', () => {
   dragOffset = null
+  savePosition()
 })
 ipcMain.on('context-menu', () => {
   buildMenu().popup({ window: win })
@@ -287,41 +325,47 @@ ipcMain.on('open-chat', (_e, chatId) => {
     )
   }
 })
+function setHitIgnore(flag) {
+  // 只在状态变化时调用，避免每 60ms 无差别 setIgnoreMouseEvents 造成窗口事件抖动
+  if (flag === hitIgnoring) return
+  hitIgnoring = flag
+  win?.setIgnoreMouseEvents(flag, { forward: true })
+}
 function pollHitTest() {
   if (!win) return
+  // 拖拽看门狗：renderer 的 mouseup 万一丢失，10s 后自愈，避免穿透永久失效
+  if (dragOffset && Date.now() - dragSince > 10_000) dragOffset = null
   // 手动穿透模式 / 拖拽中不干预
   if (clickThrough || dragOffset) return
+  if (!hitMask) {
+    setHitIgnore(false)
+    return
+  }
   let inside = false
-  if (hitMask) {
-    const b = win.getBounds()
-    const c = screen.getCursorScreenPoint()
-    if (c.x >= b.x && c.x < b.x + b.width && c.y >= b.y && c.y < b.y + b.height) {
-      const rx = c.x - b.x
-      const ry = c.y - b.y
-      // 消息气泡可点击（跳飞书会话）
-      const bb = hitMask.bubble
-      if (bb && rx >= bb.x && rx < bb.x + bb.w && ry >= bb.y && ry < bb.y + bb.h) {
-        inside = true
-      } else {
-        const s = hitMask.scale || 1
-        const cssSize = CANVAS_PX * s
-        const left = b.width - 8 - cssSize // pet 容器 right-2 bottom-2
-        const top = b.height - 8 - cssSize
-        const lx = rx - left
-        const ly = ry - top
-        if (lx >= 0 && ly >= 0 && lx < cssSize && ly < cssSize) {
-          const mx = Math.floor((lx / s) * (hitMask.w / CANVAS_PX))
-          const my = Math.floor((ly / s) * (hitMask.h / CANVAS_PX))
-          inside = !!hitMask.data[my * hitMask.w + mx]
-        }
+  const b = win.getBounds()
+  const c = screen.getCursorScreenPoint()
+  if (c.x >= b.x && c.x < b.x + b.width && c.y >= b.y && c.y < b.y + b.height) {
+    const rx = c.x - b.x
+    const ry = c.y - b.y
+    // 消息气泡可点击（跳飞书会话）
+    const bb = hitMask.bubble
+    if (bb && rx >= bb.x && rx < bb.x + bb.w && ry >= bb.y && ry < bb.y + bb.h) {
+      inside = true
+    } else {
+      const s = hitMask.scale || 1
+      const cssSize = CANVAS_PX * s
+      const left = b.width - 8 - cssSize // pet 容器 right-2 bottom-2
+      const top = b.height - 8 - cssSize
+      const lx = rx - left
+      const ly = ry - top
+      if (lx >= 0 && ly >= 0 && lx < cssSize && ly < cssSize) {
+        const mx = Math.floor((lx / s) * (hitMask.w / CANVAS_PX))
+        const my = Math.floor((ly / s) * (hitMask.h / CANVAS_PX))
+        inside = !!hitMask.data[my * hitMask.w + mx]
       }
     }
-    win.setIgnoreMouseEvents(!inside, { forward: true })
-    hitIgnoring = !inside
-  } else if (hitIgnoring) {
-    win.setIgnoreMouseEvents(false)
-    hitIgnoring = false
   }
+  setHitIgnore(!inside)
 }
 setInterval(pollHitTest, 60)
 

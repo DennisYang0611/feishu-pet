@@ -459,7 +459,16 @@ async function handleCommand(cmd) {
   }
 }
 
-/** 监听菜单下发的干活指令（SSE 长连，断了自动重连） */
+/** 监听菜单下发的干活指令（SSE 长连，断了自动重连；init 会补投最近一条，靠 ts 去重） */
+let cmdHandledTs = 0
+function maybeHandleCommand(cmd) {
+  if (!cmd || !cmd.ts) return
+  if (cmd.ts <= cmdHandledTs) return // 已执行过
+  if (Date.now() - cmd.ts > 3 * 60_000) return // 太旧的指令不补（重启场景）
+  cmdHandledTs = cmd.ts
+  handleCommand(cmd)
+}
+
 async function listenCommands() {
   for (;;) {
     try {
@@ -479,7 +488,8 @@ async function listenCommands() {
           if (!line) continue
           try {
             const d = JSON.parse(line.slice(6))
-            if (d.type === 'command') handleCommand(d.command)
+            if (d.type === 'command') maybeHandleCommand(d.command)
+            else if (d.type === 'init' && d.lastCommand) maybeHandleCommand(d.lastCommand)
           } catch {
             /* ignore */
           }

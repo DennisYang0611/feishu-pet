@@ -235,6 +235,17 @@ export default function Home() {
                     <div className="min-w-0">
                       <p className="truncate text-xs font-bold">
                         {ev.label || STATE_META[ev.state].desc}
+                        {ev.chatId && (
+                          <a
+                            href={`https://applink.feishu.cn/client/chat/open?openChatId=${encodeURIComponent(ev.chatId)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="跳转到飞书会话"
+                            className="ml-1 text-[#2B5CFF] hover:underline"
+                          >
+                            ↗
+                          </a>
+                        )}
                       </p>
                       <p className="text-[10px] font-bold text-[#191919]/40">
                         {fmtTime(ev.ts)} · {ev.source ?? 'api'}
