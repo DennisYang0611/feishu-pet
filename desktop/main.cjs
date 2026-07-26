@@ -187,6 +187,10 @@ function buildMenu() {
       click: () => shell.openExternal(`http://localhost:${PORT}/`),
     },
     {
+      label: '📒 消息归档',
+      click: () => shell.openExternal(`http://localhost:${PORT}/archive`),
+    },
+    {
       label: '退出小绝',
       click: () => app.quit(),
     },

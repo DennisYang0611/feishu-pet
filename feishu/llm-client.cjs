@@ -1,10 +1,11 @@
 /**
  * 小绝 · LLM 客户端（server.cjs 与 group-watcher.mjs 共用，零依赖 CJS）
  *
- * 三种后端：
+ * 四种后端：
  *  - api    ：OpenAI 兼容接口（自定义 baseUrl + apiKey + model）
  *  - codex  ：本机 Codex CLI（codex exec 非交互模式，用你已登录的账号）
  *  - claude ：本机 Claude Code CLI（claude -p 打印模式，用你已登录的账号）
+ *  - aily   ：飞书 Aily 智能伙伴（走 lark-cli 用户态调 Aily OpenAPI，需 ailyAppId）
  *
  * 配置持久化在 ~/.xiaojue-pet/llm.json；
  * 没有配置文件时向后兼容黑哥本机的 ~/.heige-image/config.json。
@@ -59,7 +60,7 @@ function saveLlmConfig(patch) {
   const prev = loadLlmConfig()
   const next = { ...prev, ...patch }
   if (!patch.apiKey) next.apiKey = prev.apiKey
-  next.provider = ['api', 'codex', 'claude'].includes(next.provider) ? next.provider : 'api'
+  next.provider = ['api', 'codex', 'claude', 'aily'].includes(next.provider) ? next.provider : 'api'
   fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true })
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(next, null, 2))
   return next
@@ -101,6 +102,116 @@ function runCli(cmd, args, timeoutMs) {
   })
 }
 
+/** 调 lark-cli 并合并 stdout/stderr 解析 JSON（lark-cli 报错时走 stderr 且退出码非 0） */
+function runLarkApi(args, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const env = {
+      ...process.env,
+      PATH: `${os.homedir()}/.local/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}`,
+      LARKSUITE_CLI_NO_UPDATE_NOTIFIER: '1',
+      LARKSUITE_CLI_NO_SKILLS_NOTIFIER: '1',
+    }
+    const p = spawn('lark-cli', args, { env, cwd: os.tmpdir(), stdio: ['ignore', 'pipe', 'pipe'] })
+    let out = ''
+    let err = ''
+    const timer = setTimeout(() => {
+      p.kill('SIGKILL')
+      reject(new Error(`lark-cli 响应超时（${Math.round(timeoutMs / 1000)}s）`))
+    }, timeoutMs)
+    p.stdout.on('data', (d) => (out += d))
+    p.stderr.on('data', (d) => (err += d))
+    p.on('error', (e) => {
+      clearTimeout(timer)
+      reject(new Error(`找不到 lark-cli 命令，请先安装并登录（${e.message}）`))
+    })
+    p.on('close', () => {
+      clearTimeout(timer)
+      const raw = (out.trim() || err.trim())
+      const start = raw.indexOf('{')
+      if (start >= 0) {
+        try {
+          resolve(JSON.parse(raw.slice(start)))
+          return
+        } catch {
+          /* 落到通用错误 */
+        }
+      }
+      reject(new Error(`lark-cli 无有效输出：${raw.slice(-160) || '空'}`))
+    })
+  })
+}
+
+/** 通过 lark-cli api 逃生舱调 Aily OpenAPI（用户态），返回 data 字段 */
+async function ailyApi(method, apiPath, body, timeoutMs = 60_000) {
+  const args = ['api', method, apiPath, '--as', 'user']
+  if (body !== undefined) args.push('--data', JSON.stringify(body))
+  const d = await runLarkApi(args, timeoutMs)
+  if (!d.ok) {
+    const msg = d.error?.message || 'Aily 接口调用失败'
+    if (String(d.error?.code) === '2320008' || msg.includes('未找到关联的 Aily 租户')) {
+      throw new Error('当前飞书租户未开通 Aily 服务，无法使用 Aily 引擎（可在 Aily 管理后台开通后重试）')
+    }
+    if (msg.includes('scope')) {
+      throw new Error(`Aily 权限不足：${msg}（需重新授权 aily:session/message/run 权限点）`)
+    }
+    throw new Error(msg)
+  }
+  return d.data ?? d
+}
+
+/** Aily 对话：创建会话 → 发消息 → 触发运行 → 轮询拿 ASSISTANT 回复 */
+async function ailyChat(prompt, ailyAppId, timeoutMs) {
+  if (!ailyAppId) {
+    throw new Error('未配置 Aily 应用 ID（spring_xxx__c，看板「大模型设置」里填，Aily 应用开发页地址栏可复制）')
+  }
+  const deadline = Date.now() + timeoutMs
+  // 1. 会话
+  const s = await ailyApi('POST', '/open-apis/aily/v1/sessions', {})
+  const sid = s.session?.id
+  if (!sid) throw new Error('Aily 创建会话失败')
+  try {
+    // 2. 消息
+    await ailyApi('POST', `/open-apis/aily/v1/sessions/${sid}/messages`, {
+      idempotent_id: `xj-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      content_type: 'MDX',
+      content: prompt,
+    })
+    // 3. 运行
+    const r = await ailyApi('POST', `/open-apis/aily/v1/sessions/${sid}/runs`, {
+      app_id: ailyAppId,
+    })
+    const rid = r.run?.id
+    if (!rid) throw new Error('Aily 触发运行失败')
+    // 4. 轮询运行状态
+    for (;;) {
+      if (Date.now() > deadline) throw new Error(`Aily 响应超时（${Math.round(timeoutMs / 1000)}s）`)
+      await new Promise((res) => setTimeout(res, 3000))
+      const st = await ailyApi('GET', `/open-apis/aily/v1/sessions/${sid}/runs/${rid}`, undefined)
+      const status = st.run?.status
+      if (status === 'COMPLETED') break
+      if (['FAILED', 'CANCELED', 'EXPIRED'].includes(status)) {
+        throw new Error(`Aily 运行失败（${status}）`)
+      }
+    }
+    // 5. 取 ASSISTANT 回复
+    const m = await ailyApi(
+      'GET',
+      `/open-apis/aily/v1/sessions/${sid}/messages?run_id=${rid}&page_size=20`,
+      undefined,
+    )
+    const text = (m.messages || [])
+      .filter((x) => x.sender?.sender_type === 'ASSISTANT')
+      .map((x) => x.plain_text || x.content || '')
+      .join('\n')
+      .trim()
+    if (text) return text
+    throw new Error('Aily 没有返回内容')
+  } finally {
+    // 会话用完销毁，不留垃圾
+    ailyApi('DELETE', `/open-apis/aily/v1/sessions/${sid}`, undefined, 15_000).catch(() => {})
+  }
+}
+
 /** 通用 LLM 调用（带一次重试），返回纯文本。CLI 模式本地模型冷启动慢，默认给 300s */
 async function llmChat(prompt, { timeoutMs = 90_000 } = {}) {
   const cfg = loadLlmConfig()
@@ -135,6 +246,11 @@ async function llmChat(prompt, { timeoutMs = 90_000 } = {}) {
         const text = await runCli('claude', ['-p', prompt], cliTimeout)
         if (text) return text
         throw new Error('claude 无输出')
+      }
+      if (cfg.provider === 'aily') {
+        const text = await ailyChat(prompt, cfg.ailyAppId, cliTimeout)
+        if (text) return text
+        throw new Error('aily 无输出')
       }
       // api：OpenAI 兼容接口
       if (!cfg.apiKey) throw new Error('未配置 API Key（看板「大模型设置」里填一下）')

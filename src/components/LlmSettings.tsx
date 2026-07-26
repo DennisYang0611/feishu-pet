@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 /**
  * 大模型设置：配置小绝汇报/总结用的 LLM 后端。
- * 三种模式：自定义 API（OpenAI 兼容）/ 本机 Codex CLI / 本机 Claude Code CLI。
+ * 四种模式：自定义 API（OpenAI 兼容）/ 本机 Codex CLI / 本机 Claude Code CLI / 飞书 Aily 智能伙伴。
  * 保存在 ~/.xiaojue-pet/llm.json，watcher 每次总结时实时读取，无需重启。
  */
 
@@ -10,12 +10,14 @@ const PROVIDERS = [
   { id: 'api', name: '自定义 API', desc: 'OpenAI 兼容接口' },
   { id: 'codex', name: 'Codex CLI', desc: '本机已登录账号' },
   { id: 'claude', name: 'Claude Code', desc: '本机已登录账号' },
+  { id: 'aily', name: '飞书 Aily', desc: '智能伙伴原生总结' },
 ] as const
 
 interface LlmConfigResp {
   provider: string
   baseUrl: string
   model: string
+  ailyAppId: string
   hasKey: boolean
   apiKeyMasked: string
 }
@@ -24,6 +26,7 @@ export function LlmSettings() {
   const [provider, setProvider] = useState<string>('api')
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
+  const [ailyAppId, setAilyAppId] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [keyMasked, setKeyMasked] = useState('')
   const [status, setStatus] = useState('')
@@ -38,6 +41,7 @@ export function LlmSettings() {
         setProvider(c.provider)
         setBaseUrl(c.baseUrl)
         setModel(c.model)
+        setAilyAppId(c.ailyAppId || '')
         setKeyMasked(c.apiKeyMasked)
       })
       .catch(() => setStatus('读取配置失败（宠物服务没开？）'))
@@ -50,7 +54,7 @@ export function LlmSettings() {
       const res = await fetch('/api/llm-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, baseUrl, model, apiKey }),
+        body: JSON.stringify({ provider, baseUrl, model, apiKey, ailyAppId }),
       })
       const d = await res.json()
       if (!d.ok) throw new Error(d.error)
@@ -88,12 +92,12 @@ export function LlmSettings() {
         大模型设置<span className="text-[#2B5CFF]">·</span>汇报大脑
       </h2>
       <p className="mb-3 text-[11px] leading-relaxed text-[#191919]/50">
-        「宠物总结 / 绝活指令」用的 LLM。支持自定义 API，或直接借用本机已登录的
-        Codex / Claude Code。
+        「宠物总结 / 绝活指令」用的 LLM。支持自定义 API、借用本机已登录的
+        Codex / Claude Code，或直接让飞书 Aily 智能伙伴原生总结。
       </p>
 
       {/* 后端选择 */}
-      <div className="mb-3 grid grid-cols-3 gap-1.5">
+      <div className="mb-3 grid grid-cols-4 gap-1.5">
         {PROVIDERS.map((p) => (
           <button
             key={p.id}
@@ -133,6 +137,19 @@ export function LlmSettings() {
             onChange={(e) => setApiKey(e.target.value)}
             placeholder={keyMasked ? `已存 key（${keyMasked}），留空保持不变` : 'API Key'}
           />
+        </div>
+      ) : provider === 'aily' ? (
+        <div className="space-y-2">
+          <input
+            className={inputCls}
+            value={ailyAppId}
+            onChange={(e) => setAilyAppId(e.target.value)}
+            placeholder="Aily 应用 ID（spring_xxx__c，应用开发页地址栏复制）"
+          />
+          <p className="rounded-lg border-2 border-dashed border-[#191919]/30 px-2.5 py-2 text-[11px] font-bold leading-relaxed text-[#191919]/60">
+            绝活指令直接交给你的 Aily 智能伙伴执行（它原生能读飞书消息），小绝负责传话和送达。
+            需租户已开通 Aily 服务，且 lark-cli 已授权 aily 权限点。
+          </p>
         </div>
       ) : (
         <p className="rounded-lg border-2 border-dashed border-[#191919]/30 px-2.5 py-2 text-[11px] font-bold leading-relaxed text-[#191919]/60">

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router'
 import { PetStage } from '@/pet/PetStage'
 import { usePetChannel } from '@/hooks/use-pet-channel'
 import { PET_STATES, STATE_META, type PetState } from '@/types/pet'
@@ -215,7 +216,15 @@ export default function Home() {
 
           {/* 事件日志 */}
           <div className="sticker flex min-h-0 flex-1 flex-col p-4">
-            <h2 className="mb-3 text-lg font-black">事件日志</h2>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-black">事件日志</h2>
+              <Link
+                to="/archive"
+                className="rounded-lg border-2 border-[#191919] bg-[#8B5CF6] px-2.5 py-1 text-[11px] font-black text-white shadow-[2px_2px_0_#191919] transition-all hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0_#191919]"
+              >
+                📒 消息归档 →
+              </Link>
+            </div>
             <ScrollArea className="h-44 pr-2">
               <div className="flex flex-col gap-2">
                 {[...log].reverse().map((ev, i) => (
