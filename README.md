@@ -42,7 +42,8 @@
 4. **大模型自己选**——看板里可视化切换 LLM 后端：自定义 OpenAI 兼容 API（baseUrl + key + model）、本机 Codex CLI、本机 Claude Code CLI。配置即存即用，不用重启。没有 key 的新用户直接选 CLI 模式，用自己已登录的账号就能跑。
 5. **消息归档看板**——宠物身上都是碎片化的气泡，想看全的时候打开 `http://localhost:7100/archive`（看板「事件日志」右上角和宠物右键菜单都有入口）：消息提醒 / 绝活汇报全文 / 干活指令，按天分组持久化归档，支持筛选和搜索，每条消息带「去飞书看 ↗」直达会话。
 6. **换装与形态**——5 套卡通贴纸皮肤（像素猫 / Q 版财神 / 小绿芽 / 彩虹独角兽 / 飞书配色小飞机）× 幼年 / 成年两种形态，右键即换，重启保持。
-7. **一只懂规矩的宠物**——按住拖动、单击摸头冒爱心、右键菜单、投喂食物、10 分钟没活干自动摸鱼、鼠标穿透挂着不碍事（⌘⌥P 随时恢复）、**像素级点击穿透**（点在透明区域直达桌面，只有点在它身上才响应）。
+7. **一只懂规矩的宠物**——按住拖动、单击摸头冒爱心、双击打开“小绝助手”对话窗口（顶部可展开今日待办 / 审批 / 日程，`Esc` 关闭）、右键菜单、投喂食物、10 分钟没活干自动摸鱼、鼠标穿透挂着不碍事（⌘⌥P 随时恢复）、**像素级点击穿透**（点在透明区域直达桌面，只有点在它身上才响应）。
+8. **飞书工作台**——`http://localhost:7100/workbench` 集中处理审批、任务和日程。审批支持递归解析表单 JSON、附件元数据列表（默认不下载）、带内容哈希缓存的自动 LLM 风险评估、飞书深链，以及填写理由后二次确认通过/拒绝；任务支持手动和自然语言创建、修改、完成；日程支持普通日程/视频会议、参与人、地点和提醒。所有自然语言写操作都先生成结构化预览，再由用户确认执行。
 
 ## 快速开始
 
@@ -66,6 +67,14 @@ npm run pet:watch                                # 启动监工（PET_REPORT_DRY
 两个必配项的获取方式：`lark-cli im +chat-list --as user` 找 `chat_id`，
 `lark-cli contact +me --as user` 找 `open_id`。
 
+工作台操作的是用户自己的审批、任务和主日历，需要额外完成用户授权：
+
+```bash
+lark-cli auth login --scope "approval:task:read approval:instance:read approval:task:write task:task:read task:task:write calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update"
+```
+
+应用也需要在飞书开放平台开通相同 scope。工作台顶栏会检测用户 token 状态，授权过期时显示并可复制上述最小权限命令。日历通过飞书的 `<primary>` 别名操作当前用户主日历，不需要组织策略可能限制的 `calendar:calendar.calendar:readonly`。审批通过/拒绝属于高风险写操作，必须在界面确认具体审批和动作后才会提交，审批意见可留空。
+
 ## 接进你自己的 bot
 
 在你 bot 干活的代码里，关键节点 POST 一下就行：
@@ -85,6 +94,7 @@ curl -X POST http://localhost:7100/api/event \
 
 - 只测过 **macOS**。Electron 本身跨平台，但托盘图标、快捷键、applink 唤起都没在 Windows / Linux 上验证过，**欢迎 PR**。
 - 消息感知依赖 lark-cli 的本机登录态，走的是你的用户权限，不是独立 bot 应用；飞书侧限流策略变了可能会影响轮询。
+- 飞书 CDN 附件默认只展示元数据，不会自动加载文件内容；签名 URL 在发送给 LLM 和计算缓存哈希前会被隐藏。点击“按需打开”后，PDF 可能因 CDN 响应头而直接下载。
 - 还没有 electron-builder 打包，分发需要本机有 Node 环境（路线图第一项）。
 - 私聊会话的 applink 跳转依赖飞书 Mac 客户端，没装客户端会打开网页版。
 
@@ -93,6 +103,7 @@ curl -X POST http://localhost:7100/api/event \
 - [ ] electron-builder 打包成 .app / .dmg（免 Node 环境分发）
 - [x] 多皮肤与换装（5 皮肤 × 幼年/成年双形态）
 - [x] 消息归档看板（/archive · 消息/汇报/指令按天分组持久化）
+- [x] 飞书工作台（审批 / 任务 / 日程 / 自然语言预览确认）
 - [ ] 桌面上随机游走 / 卖萌待机动作
 - [ ] 互动回执：被摸后 bot 在飞书群里回一句撒娇文案
 - [ ] Windows / Linux 适配

@@ -138,3 +138,124 @@ html.pet-window #root {
 .animate-marquee {
   animation: marquee-x 24s linear infinite;
 }
+
+/* ===== 小绝助手：紧凑桌面窗口 ===== */
+html:has(.assistant-window),
+html:has(.assistant-window) body,
+html:has(.assistant-window) #root {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+.assistant-window {
+  --assistant-blue: #2b5cff;
+  --assistant-ink: #191919;
+  --assistant-green: #9be83a;
+  --assistant-paper: #fffdf8;
+  font-family: ui-rounded, "PingFang SC", "Hiragino Sans GB", sans-serif;
+}
+
+.assistant-drag { -webkit-app-region: drag; }
+.assistant-no-drag { -webkit-app-region: no-drag; }
+.assistant-overview { animation: assistant-reveal 180ms cubic-bezier(0.2, 0, 0, 1); }
+
+.assistant-icon-button,
+.assistant-send-button,
+.assistant-mini-action,
+.assistant-command-button {
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--assistant-ink);
+  color: var(--assistant-ink);
+  transition: transform 140ms ease, background-color 140ms ease, opacity 140ms ease;
+}
+
+.assistant-icon-button {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 10px;
+  background: #f8f8f4;
+}
+
+.assistant-send-button {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  border-radius: 12px;
+  background: var(--assistant-blue);
+  color: white;
+  box-shadow: 3px 3px 0 var(--assistant-ink);
+}
+
+.assistant-mini-action {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+}
+
+.assistant-command-button {
+  min-height: 42px;
+  gap: 6px;
+  border-radius: 10px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.assistant-icon-button:hover:not(:disabled),
+.assistant-send-button:hover:not(:disabled),
+.assistant-mini-action:hover:not(:disabled),
+.assistant-command-button:hover:not(:disabled) { transform: translateY(-1px); }
+
+.assistant-icon-button:active:not(:disabled),
+.assistant-send-button:active:not(:disabled),
+.assistant-mini-action:active:not(:disabled),
+.assistant-command-button:active:not(:disabled) { transform: scale(0.96); }
+
+.assistant-icon-button:focus-visible,
+.assistant-send-button:focus-visible,
+.assistant-mini-action:focus-visible,
+.assistant-command-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--assistant-blue) 45%, white);
+  outline-offset: 2px;
+}
+
+.assistant-icon-button:disabled,
+.assistant-send-button:disabled,
+.assistant-mini-action:disabled,
+.assistant-command-button:disabled { cursor: not-allowed; opacity: 0.42; box-shadow: none; }
+
+.assistant-list-row {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid rgba(25, 25, 25, 0.13);
+  padding: 5px 4px;
+}
+
+.assistant-list-row:last-child { border-bottom: 0; }
+.assistant-empty {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: rgba(25, 25, 25, 0.45);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@keyframes assistant-reveal {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-overview { animation: none; }
+  .assistant-icon-button,
+  .assistant-send-button,
+  .assistant-mini-action,
+  .assistant-command-button { transition: none; }
+}

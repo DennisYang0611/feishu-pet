@@ -12,6 +12,7 @@
  * 额外行为：10 分钟没有任何事件 → 自动进入 sleeping（摸鱼）。
  */
 const http = require('http')
+const crypto = require('crypto')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
@@ -21,7 +22,10 @@ const {
   saveLlmConfig,
   maskKey,
   llmChat,
+  evaluateApprovalCached,
+  planWorkspaceInstruction,
 } = require('../feishu/llm-client.cjs')
+const workspace = require('../feishu/workspace-client.cjs')
 
 const VALID_STATES = new Set([
   'idle',
@@ -47,6 +51,353 @@ const MIME = {
 // —— 归档存储：消息提醒 / 绝活汇报 / 干活指令，持久化到本地，归档页随时回看 ——
 const ARCHIVE_PATH = path.join(os.homedir(), '.xiaojue-pet', 'archive.json')
 const ARCHIVE_MAX = 800
+
+function readJsonBody(req, maxBytes = 512 * 1024) {
+  return new Promise((resolve, reject) => {
+    let body = ''
+    let size = 0
+    let settled = false
+    req.on('data', (chunk) => {
+      if (settled) return
+      size += chunk.length
+      if (size > maxBytes) {
+        settled = true
+        reject(
+          new workspace.WorkspaceError('请求内容过大', {
+            code: 'BODY_TOO_LARGE',
+            status: 413,
+          }),
+        )
+        req.resume()
+        return
+      }
+      body += chunk
+    })
+    req.on('end', () => {
+      if (settled) return
+      try {
+        resolve(JSON.parse(body || '{}'))
+      } catch {
+        reject(
+          new workspace.WorkspaceError('请求 JSON 格式不正确', {
+            code: 'INVALID_JSON',
+            status: 400,
+          }),
+        )
+      }
+    })
+    req.on('error', reject)
+  })
+}
+
+function cleanPlanString(value, max = 3000) {
+  if (value === undefined || value === null) return undefined
+  return String(value).trim().slice(0, max)
+}
+
+function cleanPlanInteger(value, name, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
+  if (value === undefined || value === null || value === '' || value === false) return undefined
+  const number = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && /^\d+$/.test(value.trim())
+      ? Number(value)
+      : Number.NaN
+  if (!Number.isSafeInteger(number) || number < min || number > max) {
+    throw new workspace.WorkspaceError(`${name}格式不正确`, {
+      code: 'INVALID_PLAN',
+      status: 422,
+    })
+  }
+  return number
+}
+
+function planIdempotencyKey(value, kind) {
+  const key = cleanPlanString(value, 100)
+  return key && /^pet-plan-[a-z]+-[0-9a-f-]{36}$/i.test(key)
+    ? key
+    : `pet-plan-${kind}-${crypto.randomUUID()}`
+}
+
+const PLAN_ACTIONS = new Set([
+  'task.create',
+  'task.update',
+  'task.complete',
+  'approval.approve',
+  'approval.reject',
+  'calendar.create',
+  'calendar.update',
+  'calendar.suggest',
+  'clarify',
+])
+
+function sanitizeAssistantPlan(raw) {
+  const action = String(raw?.action || '')
+  if (!PLAN_ACTIONS.has(action)) {
+    throw new workspace.WorkspaceError('大模型返回了不支持的操作', {
+      code: 'INVALID_PLAN',
+      status: 422,
+    })
+  }
+  const source = raw?.arguments && typeof raw.arguments === 'object' ? raw.arguments : {}
+  let args
+  switch (action) {
+    case 'task.create':
+      {
+      const reminderMinutes = cleanPlanInteger(source.reminderMinutes, '任务提醒时间', {
+        max: 525_600,
+      })
+      args = {
+        summary: cleanPlanString(source.summary),
+        description: cleanPlanString(source.description),
+        due: cleanPlanString(source.due, 80),
+        assignee: cleanPlanString(source.assignee, 100),
+        idempotencyKey: planIdempotencyKey(source.idempotencyKey, 'task'),
+        ...(reminderMinutes !== undefined
+          ? { reminderMinutes }
+          : {}),
+      }
+      break
+      }
+    case 'task.update':
+      args = {
+        taskGuid: cleanPlanString(source.taskGuid, 100),
+        ...(source.summary !== undefined ? { summary: cleanPlanString(source.summary) } : {}),
+        ...(source.description !== undefined
+          ? { description: cleanPlanString(source.description) }
+          : {}),
+        ...(source.due !== undefined ? { due: cleanPlanString(source.due, 80) } : {}),
+      }
+      break
+    case 'task.complete':
+      args = { taskGuid: cleanPlanString(source.taskGuid, 100) }
+      break
+    case 'approval.approve':
+    case 'approval.reject':
+      args = {
+        instanceCode: cleanPlanString(source.instanceCode, 200),
+        taskId: cleanPlanString(source.taskId, 200),
+        comment: cleanPlanString(source.comment, 1000),
+      }
+      break
+    case 'calendar.create':
+      {
+      const reminderMinutes = cleanPlanInteger(source.reminderMinutes, '日程提醒时间', {
+        max: 20_160,
+      })
+      args = {
+        summary: cleanPlanString(source.summary, 1000),
+        start: cleanPlanString(source.start, 80),
+        end: cleanPlanString(source.end, 80),
+        description: cleanPlanString(source.description, 5000),
+        location: cleanPlanString(source.location, 500),
+        meeting: Boolean(source.meeting),
+        reminderMinutes: reminderMinutes ?? 5,
+        idempotencyKey: planIdempotencyKey(source.idempotencyKey, 'calendar'),
+        attendees: Array.isArray(source.attendees)
+          ? source.attendees.map((id) => cleanPlanString(id, 100)).filter(Boolean).slice(0, 100)
+          : [],
+      }
+      break
+      }
+    case 'calendar.update':
+      {
+      const reminderMinutes = cleanPlanInteger(source.reminderMinutes, '日程提醒时间', {
+        max: 20_160,
+      })
+      args = {
+        eventId: cleanPlanString(source.eventId, 300),
+        ...(source.summary !== undefined ? { summary: cleanPlanString(source.summary, 1000) } : {}),
+        ...(source.start !== undefined ? { start: cleanPlanString(source.start, 80) } : {}),
+        ...(source.end !== undefined ? { end: cleanPlanString(source.end, 80) } : {}),
+        ...(source.description !== undefined
+          ? { description: cleanPlanString(source.description, 5000) }
+          : {}),
+        ...(source.location !== undefined
+          ? { location: cleanPlanString(source.location, 500) }
+          : {}),
+        ...(source.meeting !== undefined ? { meeting: Boolean(source.meeting) } : {}),
+        ...(reminderMinutes !== undefined
+          ? { reminderMinutes }
+          : {}),
+      }
+      break
+      }
+    case 'calendar.suggest':
+      args = {
+        start: cleanPlanString(source.start, 80),
+        end: cleanPlanString(source.end, 80),
+        durationMinutes: Number(source.durationMinutes || 30),
+        attendees: Array.isArray(source.attendees)
+          ? source.attendees.map((id) => cleanPlanString(id, 100)).filter(Boolean).slice(0, 100)
+          : [],
+      }
+      break
+    default:
+      args = { question: cleanPlanString(source.question, 500) || '请补充更明确的信息。' }
+  }
+  return {
+    action,
+    arguments: args,
+    preview: cleanPlanString(raw.preview, 500) || action,
+    requiresConfirmation: !['clarify', 'calendar.suggest'].includes(action),
+  }
+}
+
+async function executeAssistantPlan(plan) {
+  const args = plan.arguments
+  switch (plan.action) {
+    case 'task.create':
+      return workspace.createTask(args)
+    case 'task.update':
+      return workspace.updateTask(args.taskGuid, args)
+    case 'task.complete':
+      return workspace.completeTask(args.taskGuid)
+    case 'approval.approve':
+    case 'approval.reject':
+      return workspace.decideApproval({
+        instanceCode: args.instanceCode,
+        taskId: args.taskId,
+        action: plan.action === 'approval.approve' ? 'approve' : 'reject',
+        comment: args.comment,
+      })
+    case 'calendar.create':
+      return workspace.createCalendarEvent(args)
+    case 'calendar.update':
+      return workspace.updateCalendarEvent(args.eventId, args)
+    case 'calendar.suggest':
+      return workspace.suggestCalendarTime(args)
+    default:
+      throw new workspace.WorkspaceError('这条指令需要补充信息，不能执行', {
+        code: 'CLARIFICATION_REQUIRED',
+        status: 422,
+      })
+  }
+}
+
+async function handleWorkspaceRoute(req, res, url, json) {
+  const parsedUrl = new URL(req.url || '/', 'http://localhost')
+  const approvalMatch = url.match(/^\/api\/workspace\/approvals\/([^/]+)$/)
+  const approvalDecisionMatch = url.match(
+    /^\/api\/workspace\/approvals\/([^/]+)\/decision$/,
+  )
+  const taskMatch = url.match(/^\/api\/workspace\/tasks\/([^/]+)$/)
+  const taskCompleteMatch = url.match(/^\/api\/workspace\/tasks\/([^/]+)\/complete$/)
+  const eventMatch = url.match(/^\/api\/workspace\/calendar\/events\/([^/]+)$/)
+
+  if (url === '/api/workspace/status' && req.method === 'GET') {
+    json(res, { ok: true, status: await workspace.getWorkspaceStatus() })
+    return
+  }
+  if (url === '/api/workspace/approvals' && req.method === 'GET') {
+    json(res, { ok: true, data: await workspace.listApprovals() })
+    return
+  }
+  if (approvalMatch && req.method === 'GET') {
+    json(res, { ok: true, data: await workspace.getApproval(decodeURIComponent(approvalMatch[1])) })
+    return
+  }
+  if (url === '/api/workspace/approvals/evaluate' && req.method === 'POST') {
+    const body = await readJsonBody(req)
+    const detail = await workspace.getApproval(body.instanceCode)
+    const result = await evaluateApprovalCached(body.instanceCode, detail, {
+      force: body.force === true,
+    })
+    json(res, { ok: true, ...result })
+    return
+  }
+  if (approvalDecisionMatch && req.method === 'POST') {
+    const body = await readJsonBody(req)
+    if (body.confirmed !== true) {
+      throw new workspace.WorkspaceError('提交审批决定前需要二次确认', {
+        code: 'CONFIRMATION_REQUIRED',
+        status: 409,
+      })
+    }
+    json(res, {
+      ok: true,
+      data: await workspace.decideApproval({
+        instanceCode: decodeURIComponent(approvalDecisionMatch[1]),
+        taskId: body.taskId,
+        action: body.action,
+        comment: body.comment,
+      }),
+    })
+    return
+  }
+  if (url === '/api/workspace/tasks' && req.method === 'GET') {
+    json(res, { ok: true, data: await workspace.listTasks() })
+    return
+  }
+  if (url === '/api/workspace/tasks' && req.method === 'POST') {
+    const body = await readJsonBody(req)
+    json(res, { ok: true, data: await workspace.createTask(body) }, 201)
+    return
+  }
+  if (taskCompleteMatch && req.method === 'POST') {
+    const body = await readJsonBody(req)
+    if (body.confirmed !== true) {
+      throw new workspace.WorkspaceError('完成任务前需要确认', {
+        code: 'CONFIRMATION_REQUIRED',
+        status: 409,
+      })
+    }
+    json(res, {
+      ok: true,
+      data: await workspace.completeTask(decodeURIComponent(taskCompleteMatch[1])),
+    })
+    return
+  }
+  if (taskMatch && req.method === 'PATCH') {
+    const body = await readJsonBody(req)
+    json(res, {
+      ok: true,
+      data: await workspace.updateTask(decodeURIComponent(taskMatch[1]), body),
+    })
+    return
+  }
+  if (url === '/api/workspace/calendar/agenda' && req.method === 'GET') {
+    json(res, {
+      ok: true,
+      data: await workspace.listAgenda({
+        start: parsedUrl.searchParams.get('start') || '',
+        end: parsedUrl.searchParams.get('end') || '',
+      }),
+    })
+    return
+  }
+  if (url === '/api/workspace/calendar/events' && req.method === 'POST') {
+    const body = await readJsonBody(req)
+    json(res, { ok: true, data: await workspace.createCalendarEvent(body) }, 201)
+    return
+  }
+  if (eventMatch && req.method === 'PATCH') {
+    const body = await readJsonBody(req)
+    json(res, {
+      ok: true,
+      data: await workspace.updateCalendarEvent(decodeURIComponent(eventMatch[1]), body),
+    })
+    return
+  }
+  if (url === '/api/workspace/assistant/plan' && req.method === 'POST') {
+    const body = await readJsonBody(req)
+    const rawPlan = await planWorkspaceInstruction(body.instruction, body.context || {})
+    json(res, { ok: true, plan: sanitizeAssistantPlan(rawPlan) })
+    return
+  }
+  if (url === '/api/workspace/assistant/execute' && req.method === 'POST') {
+    const body = await readJsonBody(req)
+    const plan = sanitizeAssistantPlan(body.plan)
+    if (plan.requiresConfirmation && body.confirmed !== true) {
+      throw new workspace.WorkspaceError('执行写操作前需要确认预览', {
+        code: 'CONFIRMATION_REQUIRED',
+        status: 409,
+      })
+    }
+    json(res, { ok: true, data: await executeAssistantPlan(plan), plan })
+    return
+  }
+  json(res, { ok: false, error: 'workspace route not found' }, 404)
+}
 
 function loadArchive() {
   try {
@@ -82,7 +433,7 @@ function makeArchiveStore() {
   }
 }
 
-function startPetServer({ port = 7100, distDir, onEvent } = {}) {
+function startPetServer({ port = 7100, host = '127.0.0.1', distDir, onEvent } = {}) {
   const clients = new Set()
   const archive = makeArchiveStore()
   let last = {
@@ -141,9 +492,40 @@ function startPetServer({ port = 7100, distDir, onEvent } = {}) {
   const json = (res, obj, code = 200) => {
     res.writeHead(code, {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-store',
     })
     res.end(JSON.stringify(obj))
+  }
+
+  const trustedWorkspaceOrigins = new Set([
+    `http://127.0.0.1:${port}`,
+    `http://localhost:${port}`,
+  ])
+
+  const validateWorkspaceRequest = (req) => {
+    const origin = String(req.headers.origin || '')
+    if (origin && !trustedWorkspaceOrigins.has(origin)) {
+      throw new workspace.WorkspaceError('工作台拒绝了非本机页面请求', {
+        code: 'UNTRUSTED_ORIGIN',
+        status: 403,
+      })
+    }
+    if (['POST', 'PATCH'].includes(req.method || '')) {
+      const contentType = String(req.headers['content-type'] || '')
+      if (!/^application\/json(?:;|$)/i.test(contentType)) {
+        throw new workspace.WorkspaceError('工作台写请求必须使用 JSON', {
+          code: 'INVALID_CONTENT_TYPE',
+          status: 415,
+        })
+      }
+      if (req.headers['x-feishu-pet-request'] !== '1') {
+        throw new workspace.WorkspaceError('工作台写请求缺少本地客户端标识', {
+          code: 'INVALID_CLIENT_REQUEST',
+          status: 403,
+        })
+      }
+    }
+    return origin
   }
 
   const server = http.createServer((req, res) => {
@@ -152,6 +534,46 @@ function startPetServer({ port = 7100, distDir, onEvent } = {}) {
       url = decodeURIComponent(url)
     } catch {
       /* 保持原样 */
+    }
+
+    if (url.startsWith('/api/workspace/')) {
+      let workspaceOrigin = ''
+      try {
+        workspaceOrigin = validateWorkspaceRequest(req)
+      } catch (err) {
+        json(res, {
+          ok: false,
+          error: String(err?.message || err),
+          code: err?.code || 'WORKSPACE_REQUEST_REJECTED',
+        }, Number(err?.status) || 403)
+        return
+      }
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          ...(workspaceOrigin ? { 'Access-Control-Allow-Origin': workspaceOrigin } : {}),
+          Vary: 'Origin',
+          'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, X-Feishu-Pet-Request',
+        })
+        res.end()
+        return
+      }
+      handleWorkspaceRoute(req, res, url, json).catch((err) => {
+        const status = Number(err?.status) || 500
+        console.warn(`[workspace] ${req.method} ${url}: ${err?.message || err}`)
+        json(
+          res,
+          {
+            ok: false,
+            error: String(err?.message || err || '工作台请求失败'),
+            code: err?.code || 'WORKSPACE_ERROR',
+            hint: err?.hint || '',
+            ...(err?.details ? { details: err.details } : {}),
+          },
+          status,
+        )
+      })
+      return
     }
 
     if (url === '/api/events' && req.method === 'GET') {
@@ -378,9 +800,9 @@ function startPetServer({ port = 7100, distDir, onEvent } = {}) {
       return
     }
 
-    // 静态文件（调试看板）；/archive 是归档二级页面，走 SPA 入口
+    // 静态文件（调试看板）；二级页面走 SPA 入口
     if (req.method === 'GET' && distDir) {
-      const rel = url === '/' ? '/index.html' : url === '/archive' ? '/index.html' : url
+      const rel = ['/', '/archive', '/workbench', '/assistant'].includes(url) ? '/index.html' : url
       const file = path.normalize(path.join(distDir, rel))
       if (file.startsWith(distDir) && fs.existsSync(file) && fs.statSync(file).isFile()) {
         res.writeHead(200, {
@@ -406,7 +828,7 @@ function startPetServer({ port = 7100, distDir, onEvent } = {}) {
   }, 25000)
   keepAlive.unref?.()
 
-  server.listen(port, () => {
+  server.listen(port, host, () => {
     console.log(`🐾 小绝事件服务器: http://localhost:${port}`)
   })
   return server
@@ -418,6 +840,7 @@ module.exports = { startPetServer }
 if (require.main === module) {
   startPetServer({
     port: Number(process.env.PET_PORT || 7100),
+    host: process.env.PET_HOST || '127.0.0.1',
     distDir: path.join(__dirname, '..', 'dist'),
   })
 }
