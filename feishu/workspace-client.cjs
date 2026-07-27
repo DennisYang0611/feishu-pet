@@ -509,6 +509,8 @@ function calendarEventData(input, { partial = false } = {}) {
 
 async function createCalendarEvent(input) {
   const data = calendarEventData(input)
+  // 参与人在创建日程前先校验：否则非法 ID 会留下一个已创建的日程，重试还会再建一个
+  const attendees = cleanAttendees(input.attendees)
   data.need_notification = true
   const event = await runLark(
     cliArgs(['calendar', 'events', 'create'], {
@@ -520,7 +522,6 @@ async function createCalendarEvent(input) {
       data: JSON.stringify(data),
     }),
   )
-  const attendees = cleanAttendees(input.attendees)
   const eventId = event?.event?.event_id || event?.event_id
   if (attendees.length && eventId) {
     await runLark(

@@ -12,6 +12,7 @@ const {
   BrowserWindow,
   Menu,
   Tray,
+  dialog,
   ipcMain,
   screen,
   shell,
@@ -64,7 +65,7 @@ function setSkin(patch) {
 function runJob(command, label) {
   fetch(`http://localhost:${PORT}/api/command`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Feishu-Pet-Request': '1' },
     body: JSON.stringify({ command, label, source: 'menu' }),
   }).catch(() => {})
 }
@@ -464,6 +465,10 @@ app.whenReady().then(() => {
   startPetServer({
     port: PORT,
     distDir: path.join(__dirname, '..', 'dist'),
+    onError: (_err, message) => {
+      dialog.showErrorBox('小绝启动失败', message)
+      app.quit()
+    },
   })
   createWindow()
   createTray()

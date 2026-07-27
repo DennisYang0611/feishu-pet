@@ -27,6 +27,7 @@ import { PetStage } from '@/pet/PetStage'
 import {
   ApiError,
   formatDate,
+  formatTimeSlots,
   normalizeApprovals,
   normalizeCalendar,
   normalizeTasks,
@@ -374,14 +375,21 @@ export default function MiniAssistant() {
     setBusy(true)
     setError(null)
     try {
-      await workspaceApi('/api/workspace/assistant/execute', {
+      const response = await workspaceApi<{ ok: true; data: unknown }>('/api/workspace/assistant/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan, confirmed: plan.requiresConfirmation }),
       })
-      const successText = executingPlan.action === 'task.create'
-        ? `已创建任务「${String(executingPlan.arguments.summary || '新任务')}」，已加入全部待办。`
-        : '处理完成，飞书列表已刷新。'
+      const suggestedSlots = executingPlan.action === 'calendar.suggest'
+        ? formatTimeSlots(response.data)
+        : []
+      const successText = executingPlan.action === 'calendar.suggest'
+        ? suggestedSlots.length
+          ? `找到 ${suggestedSlots.length} 个空闲时间段：${suggestedSlots.slice(0, 5).join('；')}${suggestedSlots.length > 5 ? '…' : ''}`
+          : '查询完成，但所选范围内没有解析到空闲时间段。'
+        : executingPlan.action === 'task.create'
+          ? `已创建任务「${String(executingPlan.arguments.summary || '新任务')}」，已加入全部待办。`
+          : '处理完成，飞书列表已刷新。'
       addMessage({ role: 'assistant', text: successText, success: true })
       setPlan(null)
       await loadOverview()

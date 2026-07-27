@@ -441,7 +441,7 @@ function makeArchiveStore() {
   }
 }
 
-function startPetServer({ port = 7100, host = '127.0.0.1', distDir, onEvent } = {}) {
+function startPetServer({ port = 7100, host = '127.0.0.1', distDir, onEvent, onError } = {}) {
   const clients = new Set()
   const archive = makeArchiveStore()
   let last = {
@@ -510,6 +510,9 @@ function startPetServer({ port = 7100, host = '127.0.0.1', distDir, onEvent } = 
     `http://localhost:${port}`,
   ])
 
+  // 宠物窗口经 file:// 加载，Chromium 把它的 Origin 序列化成字符串 "null"
+  const isLocalPageOrigin = (origin) => !origin || origin === 'null' || trustedLocalOrigins.has(origin)
+
   const validateLocalApiRequest = (req) => {
     const origin = String(req.headers.origin || '')
     if (origin && !trustedLocalOrigins.has(origin)) {
@@ -545,7 +548,9 @@ function startPetServer({ port = 7100, host = '127.0.0.1', distDir, onEvent } = 
     }
 
     const isWorkspaceApi = url.startsWith('/api/workspace/')
-    const isLlmSettingsApi = url === '/api/llm-config' || url === '/api/llm-test'
+    // 汇报全文与干活指令只接受本机页面/本机进程写入；/api/event 与 /api/interact 保持开放（对外埋点协议）
+    const isLlmSettingsApi = url === '/api/llm-config' || url === '/api/llm-test' ||
+      url === '/api/report' || url === '/api/command'
     if (isWorkspaceApi || isLlmSettingsApi) {
       let localOrigin = ''
       try {
@@ -589,11 +594,17 @@ function startPetServer({ port = 7100, host = '127.0.0.1', distDir, onEvent } = 
     }
 
     if (url === '/api/events' && req.method === 'GET') {
+      // SSE 流里有消息气泡、汇报全文和指令，不能对任意网页开放读取
+      const origin = String(req.headers.origin || '')
+      if (!isLocalPageOrigin(origin)) {
+        json(res, { ok: false, error: '事件流只对本机页面开放' }, 403)
+        return
+      }
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
-        'Access-Control-Allow-Origin': '*',
+        ...(origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
       })
       res.write(
         `data: ${JSON.stringify({ type: 'init', last, log: log.slice(-30), lastReport, lastCommand })}\n\n`,
@@ -628,10 +639,7 @@ function startPetServer({ port = 7100, host = '127.0.0.1', distDir, onEvent } = 
     }
 
     if (
-      (url === '/api/event' ||
-        url === '/api/interact' ||
-        url === '/api/report' ||
-        url === '/api/command') &&
+      (url === '/api/event' || url === '/api/interact') &&
       req.method === 'OPTIONS'
     ) {
       res.writeHead(204, {
@@ -814,7 +822,7 @@ function startPetServer({ port = 7100, host = '127.0.0.1', distDir, onEvent } = 
     if (req.method === 'GET' && distDir) {
       const rel = ['/', '/archive', '/workbench', '/assistant'].includes(url) ? '/index.html' : url
       const file = path.normalize(path.join(distDir, rel))
-      if (file.startsWith(distDir) && fs.existsSync(file) && fs.statSync(file).isFile()) {
+      if (file.startsWith(path.normalize(distDir) + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile()) {
         res.writeHead(200, {
           'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
         })
@@ -838,6 +846,14 @@ function startPetServer({ port = 7100, host = '127.0.0.1', distDir, onEvent } = 
   }, 25000)
   keepAlive.unref?.()
 
+  server.on('error', (err) => {
+    const message = err?.code === 'EADDRINUSE'
+      ? `端口 ${port} 已被占用（可能已有一只小绝在跑，或其他程序占了端口）。可用 PET_PORT 换端口。`
+      : `事件服务器启动失败：${err?.message || err}`
+    console.error(`🐾 ${message}`)
+    if (onError) onError(err, message)
+    else process.exit(1)
+  })
   server.listen(port, host, () => {
     console.log(`🐾 小绝事件服务器: http://localhost:${port}`)
   })

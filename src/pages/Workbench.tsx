@@ -27,6 +27,7 @@ import {
   asObject,
   asString,
   formatDate,
+  formatTimeSlots,
   normalizeApprovals,
   normalizeCalendar,
   normalizeTasks,
@@ -1142,7 +1143,8 @@ function CalendarForm({ editing, onCancel, onSaved }: {
     setDescription(editing?.description || '')
     setLocation(editing?.location || '')
     setAttendees('')
-    setReminderMinutes('5')
+    // 编辑时飞书不回传原提醒设置，默认「保持不变」，避免悄悄把提醒改成 5 分钟
+    setReminderMinutes(editing ? '' : '5')
     setMeeting(editing?.meeting || false)
     setError(null)
   }, [editing])
@@ -1159,7 +1161,7 @@ function CalendarForm({ editing, onCancel, onSaved }: {
         description,
         location,
         attendees: attendees.split(',').map((item) => item.trim()).filter(Boolean),
-        reminderMinutes: Number(reminderMinutes),
+        ...(reminderMinutes !== '' ? { reminderMinutes: Number(reminderMinutes) } : {}),
         meeting,
         ...(!editing ? { idempotencyKey: createIdempotencyKey.current } : {}),
       }
@@ -1201,7 +1203,7 @@ function CalendarForm({ editing, onCancel, onSaved }: {
         <label className="text-[10px] font-black text-[#191919]/55">结束时间<input className={`${inputClass} mt-1`} type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} required /></label>
         <input className={inputClass} value={location} onChange={(e) => setLocation(e.target.value)} placeholder="地点（可选）" />
         <input className={inputClass} value={attendees} onChange={(e) => setAttendees(e.target.value)} placeholder="参与人 ou_ / 群 oc_，逗号分隔" disabled={Boolean(editing)} />
-        <label className="text-[10px] font-black text-[#191919]/55">提前提醒<select className={`${inputClass} mt-1`} value={reminderMinutes} onChange={(e) => setReminderMinutes(e.target.value)}><option value="0">开始时</option><option value="5">5 分钟</option><option value="10">10 分钟</option><option value="15">15 分钟</option><option value="30">30 分钟</option><option value="60">1 小时</option><option value="1440">1 天</option></select></label>
+        <label className="text-[10px] font-black text-[#191919]/55">提前提醒<select className={`${inputClass} mt-1`} value={reminderMinutes} onChange={(e) => setReminderMinutes(e.target.value)}>{editing && <option value="">保持不变</option>}<option value="0">开始时</option><option value="5">5 分钟</option><option value="10">10 分钟</option><option value="15">15 分钟</option><option value="30">30 分钟</option><option value="60">1 小时</option><option value="1440">1 天</option></select></label>
         <label className="flex min-h-[62px] cursor-pointer items-center justify-between rounded-md border-2 border-[#191919] bg-white px-3 py-2">
           <span><span className="block text-xs font-black">飞书视频会议</span><span className="text-[10px] font-bold text-[#191919]/45">自动生成会议链接</span></span>
           <input type="checkbox" className="h-5 w-5 accent-[#2B5CFF]" checked={meeting} onChange={(e) => setMeeting(e.target.checked)} />
@@ -1283,6 +1285,7 @@ function AssistantPanel({ tab, tasks, calendar, onExecuted }: {
   const [instruction, setInstruction] = useState('')
   const [plan, setPlan] = useState<AssistantPlan | null>(null)
   const [result, setResult] = useState<unknown>(null)
+  const [resultAction, setResultAction] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<ApiError | null>(null)
 
@@ -1321,6 +1324,7 @@ function AssistantPanel({ tab, tasks, calendar, onExecuted }: {
 
   const execute = async () => {
     if (!plan) return
+    const action = plan.action
     setBusy(true)
     setError(null)
     try {
@@ -1330,6 +1334,7 @@ function AssistantPanel({ tab, tasks, calendar, onExecuted }: {
         body: JSON.stringify({ plan, confirmed: plan.requiresConfirmation }),
       })
       setResult(data.data)
+      setResultAction(action)
       setPlan(null)
       setInstruction('')
       onExecuted()
@@ -1339,6 +1344,9 @@ function AssistantPanel({ tab, tasks, calendar, onExecuted }: {
       setBusy(false)
     }
   }
+  const suggestedSlots = resultAction === 'calendar.suggest' && result !== null
+    ? formatTimeSlots(result)
+    : []
 
   return (
     <div className="sticker p-4">
@@ -1380,7 +1388,16 @@ function AssistantPanel({ tab, tasks, calendar, onExecuted }: {
       )}
       {result !== null && (
         <div className="mt-3 rounded-md border-2 border-[#191919] bg-[#EAFBD3] p-3 text-xs font-bold">
-          操作已完成。列表正在刷新。
+          {resultAction === 'calendar.suggest' ? (
+            suggestedSlots.length ? (
+              <>
+                <p className="font-black">找到 {suggestedSlots.length} 个空闲时间段：</p>
+                <ul className="mt-1 space-y-1">
+                  {suggestedSlots.slice(0, 8).map((slot) => <li key={slot}>· {slot}</li>)}
+                </ul>
+              </>
+            ) : '查询完成，但所选范围内没有解析到空闲时间段。'
+          ) : '操作已完成。列表正在刷新。'}
         </div>
       )}
     </div>

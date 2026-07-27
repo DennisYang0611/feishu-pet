@@ -88,7 +88,7 @@ async function post(path, body) {
   try {
     const res = await fetch(`${PET_URL}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Feishu-Pet-Request': '1' },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(4000),
     })

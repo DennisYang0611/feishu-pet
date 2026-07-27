@@ -129,6 +129,19 @@ export function formatDate(value: number | null, fallback = '未设置') {
   })
 }
 
+/** 从空闲时间建议返回里提取「开始 - 结束」时间段文案；结构对不上时返回空数组 */
+export function formatTimeSlots(data: unknown): string[] {
+  const slots = findArray(data, ['suggestions', 'slots', 'free_slots', 'time_slots', 'items'])
+  return slots
+    .map((slot) => {
+      const start = parseEpoch(slot.start_time ?? slot.start ?? slot.begin)
+      const end = parseEpoch(slot.end_time ?? slot.end ?? slot.finish)
+      if (!start) return ''
+      return end ? `${formatDate(start)} - ${formatDate(end)}` : formatDate(start)
+    })
+    .filter(Boolean)
+}
+
 export function normalizeApprovals(data: unknown): ApprovalItem[] {
   return findArray(data, ['tasks', 'items']).map((raw) => {
     const instanceCode = asString(raw.instance_code ?? raw.instanceCode)

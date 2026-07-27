@@ -115,7 +115,7 @@ async function llmChat(
   for (const attempt of [1, 2]) {
     try {
       if (cfg.provider === 'codex') {
-        const outFile = path.join(os.tmpdir(), `xiaojue-llm-${Date.now()}.txt`)
+        const outFile = path.join(os.tmpdir(), `xiaojue-llm-${crypto.randomUUID()}.txt`)
         // 关键：-C 锁到临时目录 + 只读沙盒，否则 codex 会在当前工作目录开 agent 工具循环
         await runCli(
           'codex',
@@ -162,7 +162,7 @@ async function llmChat(
     } catch (err) {
       lastErr = err
       console.warn(`[llm] 第 ${attempt} 次失败: ${err.message}`)
-      await new Promise((r) => setTimeout(r, 3000))
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 3000))
     }
   }
   throw lastErr
