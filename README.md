@@ -204,6 +204,13 @@ pet.html    桌面宠物窗口页（透明底）
 index.html  网页调试看板
 ```
 
+## 共创作者
+
+- [黑哥 HeiGeAi](https://github.com/HeiGeAi)：项目发起与主体开发
+- [DennisYang0611](https://github.com/DennisYang0611)：飞书工作台与小绝助手（[#1](https://github.com/HeiGeAi/feishu-pet/pull/1)）
+
+欢迎更多 PR，合入即列名。
+
 ## License
 
 MIT © 黑哥 (heigeai)
