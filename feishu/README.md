@@ -1,14 +1,17 @@
 # 小绝 × 飞书 CLI 打通说明
 
-宠物系统本体是 Vite 开发服务器，内置一条事件通道，飞书 bot（CLI 脚本）在干活的
-关键节点 POST 一个状态，页面上的「小绝」就实时换动作。
+宠物系统本体是 Electron 桌面应用，内嵌本机事件服务器。飞书 bot（CLI 脚本）在干活的
+关键节点 POST 一个状态，桌面上的「小绝」就实时换动作；同一服务也提供网页看板和飞书工作台。
 
 ## 启动
 
 ```bash
-cd pet-system
-npm run dev          # 默认 http://localhost:7100
+cd feishu-pet
+npm install
+npm run pet          # 首次构建并启动；后续可用 npm run pet:run
 ```
+
+服务默认监听 `http://127.0.0.1:7100`，网页看板可从 `http://localhost:7100/` 打开。
 
 ## 事件协议
 
@@ -30,7 +33,9 @@ Content-Type: application/json
 
 - `label` 会显示在宠物头顶的气泡里（≤60 字）
 - 前端通过 `GET /api/events`（SSE）实时接收；`GET /api/state` 可轮询兜底
-- API 已开 CORS，飞书 CLI 和浏览器不同机时用 `PET_URL=http://<局域网IP>:7100`
+- 事件上报 API 允许跨源调用，但整个服务默认只监听本机回环地址。不要用
+  `PET_HOST=0.0.0.0` 将它暴露到局域网或公网，因为同一端口还承载使用本机
+  lark-cli 登录态的工作台和 LLM 配置接口。
 
 ## 在 bot 脚本里埋点
 
@@ -109,10 +114,12 @@ FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=xxx node pet-bot.example.mjs
 | @bot 发「状态」       | bot 回一张带「摸摸头 / 投喂」按钮的卡片 |
 | 点卡片上的按钮        | 对应互动 + 按钮 toast 反馈 |
 
-## 路线图（demo 之后）
+## 当前进度
 
 - [x] 飞书事件订阅直连（消息 + 卡片按钮 → 摸头/投喂回传）
-- [ ] 多宠物风格切换（沿用海报六个主题色各出一套皮肤）
-- [ ] 常驻桌面浮窗（Electron / Tauri 透明窗口）
+- [x] 多皮肤与幼年/成年形态切换
+- [x] Electron 常驻桌面透明窗口
+- [x] 飞书工作台（审批 / 任务 / 日程 / 自然语言预览确认）
+- [x] 消息、汇报和指令归档
 - [ ] 状态持久化（重开页面恢复最后一次状态）
 - [ ] 互动回执：宠物被摸后 bot 在群里发一句撒娇文案

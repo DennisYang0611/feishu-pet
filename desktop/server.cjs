@@ -204,11 +204,19 @@ function sanitizeAssistantPlan(raw) {
       const reminderMinutes = cleanPlanInteger(source.reminderMinutes, '日程提醒时间', {
         max: 20_160,
       })
+      const hasStart = source.start !== undefined
+      const hasEnd = source.end !== undefined
+      if (hasStart !== hasEnd) {
+        throw new workspace.WorkspaceError('修改日程时间时必须同时提供开始和结束时间', {
+          code: 'INVALID_PLAN',
+          status: 422,
+        })
+      }
       args = {
         eventId: cleanPlanString(source.eventId, 300),
         ...(source.summary !== undefined ? { summary: cleanPlanString(source.summary, 1000) } : {}),
-        ...(source.start !== undefined ? { start: cleanPlanString(source.start, 80) } : {}),
-        ...(source.end !== undefined ? { end: cleanPlanString(source.end, 80) } : {}),
+        ...(hasStart ? { start: cleanPlanString(source.start, 80) } : {}),
+        ...(hasEnd ? { end: cleanPlanString(source.end, 80) } : {}),
         ...(source.description !== undefined
           ? { description: cleanPlanString(source.description, 5000) }
           : {}),
@@ -497,15 +505,15 @@ function startPetServer({ port = 7100, host = '127.0.0.1', distDir, onEvent } = 
     res.end(JSON.stringify(obj))
   }
 
-  const trustedWorkspaceOrigins = new Set([
+  const trustedLocalOrigins = new Set([
     `http://127.0.0.1:${port}`,
     `http://localhost:${port}`,
   ])
 
-  const validateWorkspaceRequest = (req) => {
+  const validateLocalApiRequest = (req) => {
     const origin = String(req.headers.origin || '')
-    if (origin && !trustedWorkspaceOrigins.has(origin)) {
-      throw new workspace.WorkspaceError('工作台拒绝了非本机页面请求', {
+    if (origin && !trustedLocalOrigins.has(origin)) {
+      throw new workspace.WorkspaceError('本地 API 拒绝了非本机页面请求', {
         code: 'UNTRUSTED_ORIGIN',
         status: 403,
       })
@@ -513,13 +521,13 @@ function startPetServer({ port = 7100, host = '127.0.0.1', distDir, onEvent } = 
     if (['POST', 'PATCH'].includes(req.method || '')) {
       const contentType = String(req.headers['content-type'] || '')
       if (!/^application\/json(?:;|$)/i.test(contentType)) {
-        throw new workspace.WorkspaceError('工作台写请求必须使用 JSON', {
+        throw new workspace.WorkspaceError('本地 API 写请求必须使用 JSON', {
           code: 'INVALID_CONTENT_TYPE',
           status: 415,
         })
       }
       if (req.headers['x-feishu-pet-request'] !== '1') {
-        throw new workspace.WorkspaceError('工作台写请求缺少本地客户端标识', {
+        throw new workspace.WorkspaceError('本地 API 写请求缺少本地客户端标识', {
           code: 'INVALID_CLIENT_REQUEST',
           status: 403,
         })
@@ -536,10 +544,12 @@ function startPetServer({ port = 7100, host = '127.0.0.1', distDir, onEvent } = 
       /* 保持原样 */
     }
 
-    if (url.startsWith('/api/workspace/')) {
-      let workspaceOrigin = ''
+    const isWorkspaceApi = url.startsWith('/api/workspace/')
+    const isLlmSettingsApi = url === '/api/llm-config' || url === '/api/llm-test'
+    if (isWorkspaceApi || isLlmSettingsApi) {
+      let localOrigin = ''
       try {
-        workspaceOrigin = validateWorkspaceRequest(req)
+        localOrigin = validateLocalApiRequest(req)
       } catch (err) {
         json(res, {
           ok: false,
@@ -550,7 +560,7 @@ function startPetServer({ port = 7100, host = '127.0.0.1', distDir, onEvent } = 
       }
       if (req.method === 'OPTIONS') {
         res.writeHead(204, {
-          ...(workspaceOrigin ? { 'Access-Control-Allow-Origin': workspaceOrigin } : {}),
+          ...(localOrigin ? { 'Access-Control-Allow-Origin': localOrigin } : {}),
           Vary: 'Origin',
           'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
           'Access-Control-Allow-Headers': 'Content-Type, X-Feishu-Pet-Request',
@@ -558,22 +568,24 @@ function startPetServer({ port = 7100, host = '127.0.0.1', distDir, onEvent } = 
         res.end()
         return
       }
-      handleWorkspaceRoute(req, res, url, json).catch((err) => {
-        const status = Number(err?.status) || 500
-        console.warn(`[workspace] ${req.method} ${url}: ${err?.message || err}`)
-        json(
-          res,
-          {
-            ok: false,
-            error: String(err?.message || err || '工作台请求失败'),
-            code: err?.code || 'WORKSPACE_ERROR',
-            hint: err?.hint || '',
-            ...(err?.details ? { details: err.details } : {}),
-          },
-          status,
-        )
-      })
-      return
+      if (isWorkspaceApi) {
+        handleWorkspaceRoute(req, res, url, json).catch((err) => {
+          const status = Number(err?.status) || 500
+          console.warn(`[workspace] ${req.method} ${url}: ${err?.message || err}`)
+          json(
+            res,
+            {
+              ok: false,
+              error: String(err?.message || err || '工作台请求失败'),
+              code: err?.code || 'WORKSPACE_ERROR',
+              hint: err?.hint || '',
+              ...(err?.details ? { details: err.details } : {}),
+            },
+            status,
+          )
+        })
+        return
+      }
     }
 
     if (url === '/api/events' && req.method === 'GET') {
@@ -619,9 +631,7 @@ function startPetServer({ port = 7100, host = '127.0.0.1', distDir, onEvent } = 
       (url === '/api/event' ||
         url === '/api/interact' ||
         url === '/api/report' ||
-        url === '/api/command' ||
-        url === '/api/llm-config' ||
-        url === '/api/llm-test') &&
+        url === '/api/command') &&
       req.method === 'OPTIONS'
     ) {
       res.writeHead(204, {

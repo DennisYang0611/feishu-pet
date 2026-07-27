@@ -432,9 +432,13 @@ function ExpenseBreakdown({ rows, formulaTotal }: { rows: ExpenseRow[]; formulaT
   const calculatedTotal = rows.length && rows.every((row) => row.amount !== null)
     ? rows.reduce((sum, row) => sum + (row.amount || 0), 0)
     : null
-  const mismatch = formulaTotal !== null && calculatedTotal !== null
-    ? Math.abs(formulaTotal - calculatedTotal) >= 0.005
-    : false
+  const comparable = formulaTotal !== null && calculatedTotal !== null
+  const mismatch = comparable && Math.abs(formulaTotal - calculatedTotal) >= 0.005
+  const verificationLabel = !comparable
+    ? '待核验'
+    : mismatch
+      ? '金额不一致'
+      : '金额一致'
   return (
     <section className="border-y-[3px] border-[#191919] bg-[#FFFDF8]">
       <div className="grid grid-cols-2 divide-x-2 divide-[#191919] border-b-2 border-[#191919] sm:grid-cols-[1fr_1fr_auto]">
@@ -446,8 +450,8 @@ function ExpenseBreakdown({ rows, formulaTotal }: { rows: ExpenseRow[]; formulaT
           <p className="text-[10px] font-black text-[#191919]/45">明细计算</p>
           <p className="mt-1 text-xl font-black tabular-nums">{money(calculatedTotal)}</p>
         </div>
-        <div className={`col-span-2 flex items-center justify-center px-3 py-2 text-xs font-black sm:col-span-1 ${mismatch ? 'bg-[#FFD7D5] text-[#8A1C1C]' : 'bg-[#DDF9B9] text-[#285E13]'}`}>
-          {mismatch ? '金额不一致' : calculatedTotal === null ? '待核验' : '金额一致'}
+        <div className={`col-span-2 flex items-center justify-center px-3 py-2 text-xs font-black sm:col-span-1 ${mismatch ? 'bg-[#FFD7D5] text-[#8A1C1C]' : comparable ? 'bg-[#DDF9B9] text-[#285E13]' : 'bg-[#FFF2B3] text-[#6B4F00]'}`}>
+          {verificationLabel}
         </div>
       </div>
       {rows.length > 0 && (

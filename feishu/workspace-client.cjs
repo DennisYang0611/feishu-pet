@@ -24,6 +24,7 @@ const REQUIRED_SCOPES = {
     'calendar:calendar.event:read',
     'calendar:calendar.event:create',
     'calendar:calendar.event:update',
+    'calendar:calendar.free_busy:read',
   ],
 }
 const PRIMARY_CALENDAR_ID = '<primary>'
