@@ -49,7 +49,10 @@ export function LlmSettings() {
     try {
       const res = await fetch('/api/llm-config', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Feishu-Pet-Request': '1',
+        },
         body: JSON.stringify({ provider, baseUrl, model, apiKey }),
       })
       const d = await res.json()
@@ -68,7 +71,14 @@ export function LlmSettings() {
     setBusy(true)
     setStatus('正在让大模型说一句话…（CLI 模式可能要十几秒）')
     try {
-      const res = await fetch('/api/llm-test', { method: 'POST' })
+      const res = await fetch('/api/llm-test', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Feishu-Pet-Request': '1',
+        },
+        body: '{}',
+      })
       const d = await res.json()
       if (d.ok) setStatus(`连接成功 ✓ 它说：「${d.text}」`)
       else setStatus(`连接失败 ✗ ${d.error}`)

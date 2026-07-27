@@ -14,4 +14,11 @@ contextBridge.exposeInMainWorld('petAPI', {
   hitMask: (m) => ipcRenderer.send('hit-mask', m),
   /** 点击消息气泡：跳转到飞书对应会话 */
   openChat: (chatId) => ipcRenderer.send('open-chat', chatId),
+  /** 双击宠物打开小绝助手 */
+  openAssistant: () => ipcRenderer.send('open-assistant'),
+  closeAssistant: () => ipcRenderer.send('assistant-close'),
+  resizeAssistant: (expanded) => ipcRenderer.send('assistant-resize', Boolean(expanded)),
+  openWorkbench: () => ipcRenderer.send('open-workbench'),
+  openApproval: (approval) => ipcRenderer.send('open-approval', approval),
+  openWorkbenchApproval: (instanceCode) => ipcRenderer.send('open-workbench-approval', instanceCode),
 })

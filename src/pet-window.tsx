@@ -26,6 +26,16 @@ declare global {
         bubble?: { x: number; y: number; w: number; h: number } | null
       }) => void
       openChat: (chatId: string) => void
+      openAssistant: () => void
+      closeAssistant: () => void
+      resizeAssistant: (expanded: boolean) => void
+      openWorkbench: () => void
+      openApproval: (approval: {
+        definitionCode: string
+        instanceCode: string
+        taskId: string
+      }) => void
+      openWorkbenchApproval: (instanceCode: string) => void
     }
   }
 }
@@ -33,7 +43,7 @@ declare global {
 const INTRO_TEXT =
   '我叫小绝 🐾 诞生于 2026 年 7 月 25 日 · 飞书绝活大会北京场。bot 干活我伴舞，飞书来消息我冒泡，右键换皮肤、点我派绝活，摸我冒爱心～'
 
-function PetWindow() {
+export function PetWindow() {
   const { current, stateSince, interact, bumpInteract } = usePetChannel()
   const meta = STATE_META[current.state]
   const [now, setNow] = useState(Date.now())
@@ -45,13 +55,17 @@ function PetWindow() {
     () => (localStorage.getItem('pet-form') as PetForm) || 'adult',
   )
   const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null)
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [introUntil, setIntroUntil] = useState(0)
   const scaleRef = useRef(scale)
   scaleRef.current = scale
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 2000)
-    return () => clearInterval(t)
+    return () => {
+      clearInterval(t)
+      if (clickTimer.current) clearTimeout(clickTimer.current)
+    }
   }, [])
 
   // 自我介绍（托盘/右键菜单触发）：气泡展示 9 秒
@@ -160,7 +174,18 @@ function PetWindow() {
       if (drag.current.moved) window.petAPI?.dragMove()
     }
     const up = () => {
-      if (drag.current && !drag.current.moved) bumpInteract('pat') // 单击 = 摸头
+      if (drag.current && !drag.current.moved) {
+        if (clickTimer.current) {
+          clearTimeout(clickTimer.current)
+          clickTimer.current = null
+          window.petAPI?.openAssistant()
+        } else {
+          clickTimer.current = setTimeout(() => {
+            clickTimer.current = null
+            bumpInteract('pat')
+          }, 240)
+        }
+      }
       drag.current = null
       window.petAPI?.dragEnd()
       window.removeEventListener('mousemove', move)
@@ -208,11 +233,20 @@ function PetWindow() {
       {/* 宠物本体锚定右下：按住拖动，单击摸头，右键菜单 */}
       <div
         onMouseDown={onMouseDown}
+        onDoubleClick={(event) => {
+          event.preventDefault()
+          if (clickTimer.current) {
+            clearTimeout(clickTimer.current)
+            clickTimer.current = null
+          }
+          window.petAPI?.openAssistant()
+        }}
         onContextMenu={(e) => {
           e.preventDefault()
           window.petAPI?.openMenu()
         }}
         className="absolute bottom-2 right-2 cursor-grab active:cursor-grabbing"
+        title="单击摸头，双击打开小绝助手"
       >
         <PetStage
           state={current.state}

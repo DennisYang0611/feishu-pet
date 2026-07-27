@@ -24,6 +24,7 @@ const { startPetServer } = require('./server.cjs')
 const PORT = Number(process.env.PET_PORT || 7100)
 
 let win = null
+let assistantWin = null
 let tray = null
 let alwaysOnTop = true
 let clickThrough = false
@@ -183,8 +184,16 @@ function buildMenu() {
     },
     { type: 'separator' },
     {
+      label: '打开小绝助手',
+      click: () => createAssistantWindow(),
+    },
+    {
       label: '打开调试看板',
       click: () => shell.openExternal(`http://localhost:${PORT}/`),
+    },
+    {
+      label: '飞书工作台',
+      click: () => shell.openExternal(`http://localhost:${PORT}/workbench`),
     },
     {
       label: '📒 消息归档',
@@ -195,6 +204,54 @@ function buildMenu() {
       click: () => app.quit(),
     },
   ])
+}
+
+function positionAssistantWindow() {
+  if (!assistantWin) return
+  const petBounds = win?.getBounds()
+  const cursor = screen.getCursorScreenPoint()
+  const workArea = screen.getDisplayNearestPoint(
+    petBounds ? { x: petBounds.x, y: petBounds.y } : cursor,
+  ).workArea
+  const [width, height] = assistantWin.getSize()
+  const preferredX = petBounds ? petBounds.x + petBounds.width - width : workArea.x + workArea.width - width - 24
+  const preferredY = petBounds ? petBounds.y + petBounds.height - height : workArea.y + workArea.height - height - 24
+  const x = Math.min(Math.max(preferredX, workArea.x + 12), workArea.x + workArea.width - width - 12)
+  const y = Math.min(Math.max(preferredY, workArea.y + 12), workArea.y + workArea.height - height - 12)
+  assistantWin.setPosition(Math.round(x), Math.round(y))
+}
+
+function createAssistantWindow() {
+  if (assistantWin && !assistantWin.isDestroyed()) {
+    positionAssistantWindow()
+    assistantWin.show()
+    assistantWin.focus()
+    return
+  }
+  assistantWin = new BrowserWindow({
+    width: 460,
+    height: 500,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+    },
+  })
+  assistantWin.setAlwaysOnTop(true, 'floating')
+  assistantWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  assistantWin.setMenu(null)
+  positionAssistantWindow()
+  assistantWin.loadURL(`http://127.0.0.1:${PORT}/assistant`)
+  assistantWin.once('ready-to-show', () => assistantWin?.show())
+  assistantWin.on('closed', () => {
+    assistantWin = null
+  })
 }
 
 function createWindow() {
@@ -312,6 +369,35 @@ ipcMain.on('context-menu', () => {
 ipcMain.on('skin-changed', (_e, v) => {
   if (v?.skin) currentSkin = v.skin
   if (v?.form) currentForm = v.form
+})
+ipcMain.on('open-assistant', () => createAssistantWindow())
+ipcMain.on('assistant-close', () => assistantWin?.close())
+ipcMain.on('assistant-resize', (_e, expanded) => {
+  if (!assistantWin || assistantWin.isDestroyed()) return
+  assistantWin.setSize(expanded ? 520 : 460, expanded ? 760 : 500, true)
+  positionAssistantWindow()
+})
+ipcMain.on('open-workbench', () => {
+  shell.openExternal(`http://127.0.0.1:${PORT}/workbench`)
+})
+const APPROVAL_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/
+ipcMain.on('open-approval', (_e, approval) => {
+  const definitionCode = approval?.definitionCode
+  const instanceCode = approval?.instanceCode
+  const taskId = approval?.taskId
+  if (![definitionCode, instanceCode, taskId].every((value) => (
+    typeof value === 'string' && APPROVAL_ID_PATTERN.test(value)
+  ))) return
+  const params = new URLSearchParams({
+    approvalCode: definitionCode,
+    instanceCode,
+    taskId,
+  })
+  shell.openExternal(`https://applink.feishu.cn/client/approval/detail?${params}`)
+})
+ipcMain.on('open-workbench-approval', (_e, instanceCode) => {
+  if (typeof instanceCode !== 'string' || !APPROVAL_ID_PATTERN.test(instanceCode)) return
+  shell.openExternal(`http://127.0.0.1:${PORT}/workbench?approval=${encodeURIComponent(instanceCode)}`)
 })
 
 // —— 像素级点击穿透：透明区域放行鼠标，只有点在宠物本体上才吃事件 ——

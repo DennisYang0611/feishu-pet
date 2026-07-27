@@ -8,6 +8,7 @@ import { LlmSettings } from '@/components/LlmSettings'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { BriefcaseBusiness } from 'lucide-react'
 
 const POSTERS = [
   '01-垃圾桶.png',
@@ -71,6 +72,13 @@ export default function Home() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            to="/workbench"
+            className="sticker flex items-center gap-1.5 px-3 py-1.5 text-xs font-black transition-all hover:-translate-y-0.5"
+          >
+            <BriefcaseBusiness className="h-4 w-4" />
+            飞书工作台
+          </Link>
           <Badge
             className="border-2 border-[#191919] px-3 py-1 text-xs font-bold"
             style={{ background: meta.color, color: meta.textColor }}
