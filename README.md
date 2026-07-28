@@ -107,25 +107,37 @@ lark-cli config init --new   # 首次配置应用
 lark-cli update              # 同时更新 CLI 和配套 Skills
 ```
 
-更新后，如果正在通过 AI Agent 使用 lark-cli Skills，需要退出并重新打开 Agent。然后配置消息监工：
+更新后，如果正在通过 AI Agent 使用 lark-cli Skills，需要退出并重新打开 Agent。右键菜单的消息总结会按需启动一次性任务，不需要再单独启动 watcher；需先在飞书开放平台开通同名 scope，再完成用户授权：
 
 ```bash
-cp feishu/.env.local.example feishu/.env.local   # 改成你的群 chat_id 和 open_id
+lark-cli auth login --scope "im:chat:read im:message.history:readonly im:message.group_msg:get_as_user im:message.p2p_msg:get_as_user im:message.reactions:read contact:user.base:readonly"
+```
+
+只有需要持续监控指定重点群的消息气泡和 18:00 日报时，才需要额外配置并启动长驻监工：
+
+```bash
+cp feishu/.env.local.example feishu/.env.local   # 可选：填入要重点监听的群 chat_id
 npm run pet:watch                                # 启动监工（PET_REPORT_DRYRUN=1 时总结只上看板不发飞书）
 ```
 
-两个必配项的获取方式：`lark-cli im +chat-list --as user` 找 `chat_id`，
-`lark-cli contact +me --as user` 找 `open_id`。
+`chat_id` 可通过 `lark-cli im +chat-list --as user` 查找。当前用户 `open_id` 默认从
+`lark-cli auth status --json` 自动读取，无需写入 `.env.local`。
 
 工作台操作的是用户自己的审批、任务和主日历，需要额外完成用户授权：
 
 ```bash
-lark-cli auth login --scope "approval:task:read approval:instance:read approval:task:write task:task:read task:task:write calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.free_busy:read"
+lark-cli auth login --scope "approval:task:read approval:instance:read approval:task:write task:task:read task:task:write calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update"
 ```
 
 应用还需要在飞书开放平台开通相同 scope。也就是说，工作台权限同时受“应用已开通权限”和“当前用户已授权”两层控制；多次 `auth login --scope` 会增量补充用户授权。工作台顶栏会检测用户 token 状态，授权过期或 scope 不足时显示并可复制最小权限命令。
 
-日历通过飞书的 `<primary>` 别名操作当前用户主日历，不需要申请 `calendar:calendar.calendar:readonly`。`calendar:calendar.free_busy:read` 用于查询空闲时间。如果授权返回 `These permissions are restricted by your organization's security policy`，说明权限被组织策略限制，重复登录或在个人授权页勾选权限无法解决，需要组织管理员调整策略；在策略放开前，对应的日历或空闲时间能力不可用，其他已获授权的功能不受影响。
+日程查询、创建和修改都直接使用飞书的 `primary` 主日历别名，不额外申请读取日历资料的权限。`calendar:calendar.free_busy:read` 只用于查询空闲时间，不影响指定时间创建日程或会议。如果授权返回 `These permissions are restricted by your organization's security policy`，说明该权限被组织策略限制，重复登录或在个人授权页勾选权限无法解决，需要组织管理员调整策略；在策略放开前，对应能力不可用，其他已获授权的功能不受影响。
+
+如需使用“查找空闲时间”建议，再单独增量授权：
+
+```bash
+lark-cli auth login --scope "calendar:calendar.free_busy:read"
+```
 
 审批通过或拒绝属于高风险写操作，必须在界面确认具体审批和动作后才会提交，审批意见可以留空。
 
